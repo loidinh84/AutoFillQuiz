@@ -22,7 +22,7 @@
   let isAnalyzing        = false;
   let settings = {
     geminiApiKey: "",
-    modelName: "gemini-2.0-flash",
+    modelName: "gemini-1.5-flash",
     autoHighlight: true,
     showExplanation: true,
     vietnamese: true
@@ -210,8 +210,8 @@
               <div class="aqz-input-wrap">
                 <svg class="prefix" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 0v20M2 12h20"/></svg>
                 <select id="aqz-model-select">
-                  <option value="gemini-2.0-flash">Gemini 2.0 Flash (Nhanh, miễn phí)</option>
-                  <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                  <option value="gemini-1.5-flash" selected>Gemini 1.5 Flash (Khuyên dùng, ổn định)</option>
+                  <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
                   <option value="gemini-1.5-pro">Gemini 1.5 Pro (Chính xác hơn)</option>
                 </select>
               </div>
@@ -666,13 +666,25 @@
 
   function extractQuestions() {
     const questions = [];
-    questions.push(...extractRadioGroups());
-    questions.push(...extractCheckboxGroups());
-    questions.push(...extractSelectDropdowns());
-    questions.push(...extractFillBlanks());
-    questions.push(...extractGoogleForms());
-    if (questions.length === 0) questions.push(...extractGenericQuestions());
+    
+    // 1. Extract from the current frame's document
+    questions.push(...extractFromDoc(document));
 
+    // 2. Extract from any same-origin iframes recursively
+    try {
+      document.querySelectorAll("iframe").forEach(iframe => {
+        try {
+          const doc = iframe.contentDocument || iframe.contentWindow?.document;
+          if (doc) {
+            questions.push(...extractFromDoc(doc));
+          }
+        } catch (e) {
+          // Cross-origin iframe, will be scanned by its own content script if injected
+        }
+      });
+    } catch (e) {}
+
+    // Deduplicate
     const seen = new Set();
     return questions.filter(q => {
       const key = q.questionText.trim().slice(0, 60);
@@ -682,9 +694,22 @@
     });
   }
 
-  function extractRadioGroups() {
+  function extractFromDoc(rootDoc) {
+    const list = [];
+    list.push(...extractRadioGroups(rootDoc));
+    list.push(...extractCheckboxGroups(rootDoc));
+    list.push(...extractSelectDropdowns(rootDoc));
+    list.push(...extractFillBlanks(rootDoc));
+    list.push(...extractGoogleForms(rootDoc));
+    if (list.length === 0) {
+      list.push(...extractGenericQuestions(rootDoc));
+    }
+    return list;
+  }
+
+  function extractRadioGroups(rootDoc = document) {
     const questions = [], groups = {};
-    document.querySelectorAll('input[type="radio"]').forEach(r => {
+    rootDoc.querySelectorAll('input[type="radio"]').forEach(r => {
       if (r.closest('#aqz-panel-host')) return; // skip our own panel
       const name = r.name || "g_" + Math.random();
       if (!groups[name]) groups[name] = [];
@@ -701,9 +726,9 @@
     return questions;
   }
 
-  function extractCheckboxGroups() {
+  function extractCheckboxGroups(rootDoc = document) {
     const questions = [], processed = new Set();
-    document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    rootDoc.querySelectorAll('input[type="checkbox"]').forEach(cb => {
       if (cb.closest('#aqz-panel-host')) return; // skip our own panel
       if (processed.has(cb)) return;
       const container = findCheckboxContainer(cb);
@@ -720,9 +745,9 @@
     return questions;
   }
 
-  function extractSelectDropdowns() {
+  function extractSelectDropdowns(rootDoc = document) {
     const questions = [];
-    document.querySelectorAll("select").forEach(sel => {
+    rootDoc.querySelectorAll("select").forEach(sel => {
       if (sel.closest('#aqz-panel-host')) return; // skip our own panel
       const validOpts = Array.from(sel.options).filter(o => o.value && o.text.trim());
       if (validOpts.length < 2) return;
@@ -733,10 +758,10 @@
     return questions;
   }
 
-  function extractFillBlanks() {
+  function extractFillBlanks(rootDoc = document) {
     const questions = [];
     const skipTypes = new Set(["submit", "button", "image", "hidden", "file", "radio", "checkbox"]);
-    document.querySelectorAll('input[type="text"], input:not([type]), textarea').forEach(inp => {
+    rootDoc.querySelectorAll('input[type="text"], input:not([type]), textarea').forEach(inp => {
       if (inp.type && skipTypes.has(inp.type)) return;
       if (inp.closest("#aqz-panel-host")) return;
       const questionText = findQuestionText(inp);
@@ -746,9 +771,9 @@
     return questions;
   }
 
-  function extractGoogleForms() {
+  function extractGoogleForms(rootDoc = document) {
     const questions = [];
-    document.querySelectorAll('[role="listitem"], .Qr7Oae, .geS5n').forEach(c => {
+    rootDoc.querySelectorAll('[role="listitem"], .Qr7Oae, .geS5n').forEach(c => {
       const qEl = c.querySelector('.M7eMe, [role="heading"], .z12JJ');
       if (!qEl) return;
       const questionText = qEl.textContent.trim();
@@ -769,11 +794,11 @@
     return questions;
   }
 
-  function extractGenericQuestions() {
+  function extractGenericQuestions(rootDoc = document) {
     const questions = [];
     const pat = /^\s*(\d+[\.\)]|câu\s+\d+|question\s+\d+)/i;
     
-    document.querySelectorAll("p, li, div, span, h1,h2,h3,h4,h5, td, strong, b").forEach(el => {
+    rootDoc.querySelectorAll("p, li, div, span, h1,h2,h3,h4,h5, td, strong, b").forEach(el => {
       if (el.closest('#aqz-panel-host')) return; // skip our own panel
       
       let text = el.textContent.trim();

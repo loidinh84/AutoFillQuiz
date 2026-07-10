@@ -108,7 +108,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ─── Gemini API call ───────────────────────
 async function handleAnalyzeQuiz({ questions, apiKey, modelName }) {
   if (!apiKey) throw new Error("Chưa có API key. Vào ⚙️ Cài Đặt để nhập.");
-  const model = modelName || "gemini-2.0-flash";
+  const model = modelName || "gemini-1.5-flash";
   const results = [];
   for (const q of questions) {
     try {
