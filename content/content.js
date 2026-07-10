@@ -639,8 +639,15 @@
       chrome.storage.sync.get(
         ["geminiApiKey", "modelName", "autoHighlight", "showExplanation"],
         result => {
-          if (result.geminiApiKey)    settings.geminiApiKey    = result.geminiApiKey;
-          if (result.modelName)       settings.modelName       = result.modelName;
+          if (result.geminiApiKey) settings.geminiApiKey = result.geminiApiKey;
+          
+          // Auto-migrate from rate-limited 2.0-flash to stable 1.5-flash for existing settings
+          if (result.modelName && result.modelName !== "gemini-2.0-flash") {
+            settings.modelName = result.modelName;
+          } else {
+            settings.modelName = "gemini-1.5-flash";
+          }
+          
           if (result.autoHighlight !== undefined) settings.autoHighlight   = result.autoHighlight;
           if (result.showExplanation !== undefined) settings.showExplanation = result.showExplanation;
           resolve();
