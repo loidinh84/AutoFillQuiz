@@ -296,72 +296,64 @@
       });
     });
 
-    // Drag
-    makeDraggable(host, host.querySelector("#aqz-panel-header"));
-  }
-
   // ─── Drag logic ───────────────────────────
   function makeDraggable(panel, handle) {
-    let startX, startY, startLeft, startTop;
     let isDragging = false;
+    let startX, startY, startLeft, startTop;
 
+    // Use capture phase so page scripts can't block our events
     handle.addEventListener("mousedown", e => {
-      // Ignore clicks on buttons inside header
-      if (e.target.closest("button")) return;
-
-      isDragging = true;
-      startX = e.clientX;
-      startY = e.clientY;
+      if (e.target.closest("button, a, input, select, textarea")) return;
+      e.preventDefault();
 
       const rect = panel.getBoundingClientRect();
+      startX    = e.clientX;
+      startY    = e.clientY;
       startLeft = rect.left;
       startTop  = rect.top;
+      isDragging = true;
 
-      panel.style.transition = "none";
-      document.body.style.userSelect = "none";
+      panel.style.transition = 'none';
+      panel.style.animation  = 'none';
+    }, true); // ← capture phase on mousedown
 
-      e.preventDefault();
-    });
-
-    document.addEventListener("mousemove", e => {
+    // Attach to window with capture so page events can't interfere
+    window.addEventListener("mousemove", e => {
       if (!isDragging) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
 
-      let newLeft = startLeft + dx;
-      let newTop  = startTop  + dy;
+      let newLeft = startLeft + (e.clientX - startX);
+      let newTop  = startTop  + (e.clientY - startY);
 
-      // Clamp within viewport — keep at least header visible
-      const panelW = panel.offsetWidth;
-      const panelH = panel.offsetHeight;
-      newLeft = Math.max(0, Math.min(window.innerWidth  - panelW, newLeft));
+      newLeft = Math.max(0, Math.min(window.innerWidth  - panel.offsetWidth, newLeft));
       newTop  = Math.max(0, Math.min(window.innerHeight - 44, newTop));
 
-      // Use setProperty with 'important' to override CSS !important rules
-      panel.style.setProperty('left',   newLeft + 'px', 'important');
-      panel.style.setProperty('top',    newTop  + 'px', 'important');
-      panel.style.setProperty('right',  'auto',          'important');
-      panel.style.setProperty('bottom', 'auto',          'important');
-    });
+      // Regular inline style — overrides CSS rules (higher specificity)
+      panel.style.left   = newLeft + 'px';
+      panel.style.top    = newTop  + 'px';
+      panel.style.right  = 'auto';
+      panel.style.bottom = 'auto';
+    }, { capture: true, passive: false });
 
-    document.addEventListener("mouseup", () => {
+    window.addEventListener("mouseup", () => {
       if (!isDragging) return;
       isDragging = false;
-      document.body.style.userSelect = "";
-      panel.style.transition = "";
-      // Save position
-      const left = panel.style.getPropertyValue('left');
-      const top  = panel.style.getPropertyValue('top');
-      if (left) chrome.storage.local.set({ aqzPanelLeft: left, aqzPanelTop: top });
-    });
+      panel.style.transition = '';
+      if (panel.style.left) {
+        chrome.storage.local.set({
+          aqzPanelLeft: panel.style.left,
+          aqzPanelTop:  panel.style.top
+        });
+      }
+    }, { capture: true });
   }
 
   function restorePanelPosition(panel) {
     chrome.storage.local.get(["aqzPanelLeft", "aqzPanelTop"], result => {
       if (result.aqzPanelLeft) {
-        panel.style.setProperty('left',  result.aqzPanelLeft, 'important');
-        panel.style.setProperty('top',   result.aqzPanelTop,  'important');
-        panel.style.setProperty('right', 'auto',               'important');
+        panel.style.left   = result.aqzPanelLeft;
+        panel.style.top    = result.aqzPanelTop;
+        panel.style.right  = 'auto';
+        panel.style.bottom = 'auto';
       }
     });
   }
@@ -420,13 +412,18 @@
       updateBadge(analysisResults.length);
 
       const ok = analysisResults.filter(r => r.answer && !r.error).length;
-      setStatus("success", `✓ Xong! ${ok}/${extractedQuestions.length} câu`, "Xem kết quả tại tab Kết Quả");
+      if (ok === 0) {
+        // All failed — likely API quota or bad key
+        const firstErr = analysisResults.find(r => r.error)?.error || "Kiểm tra API key";
+        setStatus("warning", `0/${extractedQuestions.length} câu thành công`, firstErr.slice(0, 60));
+      } else {
+        setStatus("success", `✓ Xong! ${ok}/${extractedQuestions.length} câu`, "Xem kết quả tại tab Kết Quả");
+        switchTab("results");
+      }
 
       const host = document.getElementById("aqz-panel-host");
       host.querySelector("#aqz-btn-autofill").disabled = false;
       host.querySelector("#aqz-btn-highlight").disabled = false;
-
-      switchTab("results");
 
     } catch (err) {
       console.error("[AutoFillQuiz]", err);
