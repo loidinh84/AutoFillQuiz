@@ -844,11 +844,52 @@
 
   function findNearbyOptions(qEl) {
     const opts = [];
-    let el = qEl.nextElementSibling, n = 0;
-    while (el && n < 10) {
-      const t = el.textContent.trim();
-      if (/^[A-Da-d][\.\)]\s*.+/.test(t)) opts.push({ text: t, element: el, labelElement: el });
-      el = el.nextElementSibling; n++;
+    
+    // Strategy 1: Sibling elements starting with options pattern directly
+    let sibling = qEl.nextElementSibling;
+    let n = 0;
+    while (sibling && n < 10) {
+      const text = sibling.textContent.trim();
+      if (/^[a-d][\.\)]\s*/i.test(text)) {
+        opts.push({ text: text, element: sibling, labelElement: sibling });
+      }
+      sibling = sibling.nextElementSibling;
+      n++;
+    }
+    if (opts.length >= 2) return opts;
+
+    // Strategy 2: Sibling is an options container — search elements inside it
+    opts.length = 0;
+    sibling = qEl.nextElementSibling;
+    if (sibling) {
+      const items = sibling.querySelectorAll("div, p, span, label, li");
+      for (const item of items) {
+        if (item.children.length > 3) continue;
+        const text = item.textContent.trim();
+        if (/^[a-d][\.\)]\s*.+/i.test(text)) {
+          if (!opts.some(o => o.element.contains(item) || item.contains(o.element))) {
+            opts.push({ text: text, element: item, labelElement: item });
+          }
+        }
+      }
+    }
+    if (opts.length >= 2) return opts;
+
+    // Strategy 3: Check inside question parent scope (excluding qEl itself)
+    opts.length = 0;
+    const parent = qEl.parentElement;
+    if (parent) {
+      const items = parent.querySelectorAll("div, p, span, label, li");
+      for (const item of items) {
+        if (item === qEl || qEl.contains(item)) continue;
+        if (item.children.length > 3) continue;
+        const text = item.textContent.trim();
+        if (/^[a-d][\.\)]\s*.+/i.test(text)) {
+          if (!opts.some(o => o.element.contains(item) || item.contains(o.element))) {
+            opts.push({ text: text, element: item, labelElement: item });
+          }
+        }
+      }
     }
     return opts;
   }
@@ -979,9 +1020,12 @@
     const empty = document.getElementById("aqz-empty-state");
     if (!list) return;
     list.querySelectorAll(".aqz-result-card").forEach(el => el.remove());
-    if (!results.length) { if (empty) empty.style.display = "flex"; return; }
-    if (empty) empty.style.display = "none";
-    const showExp = document.getElementById("aqz-tog-exp")?.checked ?? settings.showExplanation;
+    if (!results.length) {
+      if (empty) empty.classList.remove("aqz-hidden");
+      return;
+    }
+    if (empty) empty.classList.add("aqz-hidden");
+    const showExp = settings.showExplanation;
 
     results.forEach((r, i) => {
       const card = document.createElement("div");
@@ -1012,7 +1056,7 @@
     const list = document.getElementById("aqz-results-list");
     if (list) list.querySelectorAll(".aqz-result-card").forEach(el => el.remove());
     const empty = document.getElementById("aqz-empty-state");
-    if (empty) empty.style.display = "flex";
+    if (empty) empty.classList.remove("aqz-hidden");
   }
 
   const statusCfg = {

@@ -582,3 +582,6 @@
   100% { opacity: 0; }
 }
 @keyframes aqzSpin { to { transform: rotate(360deg); } }
+
+/* ─── Utility ─────────────────────────────── */
+.aqz-hidden { display: none !important; }
