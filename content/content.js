@@ -761,13 +761,43 @@
 
   function extractGenericQuestions() {
     const questions = [];
-    const pat = /^(\d+[\.\)]\s+|câu\s+\d+|question\s+\d+)/i;
-    document.querySelectorAll("p, li, div, span, h1,h2,h3,h4,h5, td").forEach(el => {
+    const pat = /^\s*(\d+[\.\)]|câu\s+\d+|question\s+\d+)/i;
+    
+    document.querySelectorAll("p, li, div, span, h1,h2,h3,h4,h5, td, strong, b").forEach(el => {
       if (el.closest('#aqz-panel-host')) return; // skip our own panel
-      const text = el.textContent.trim();
-      if (!pat.test(text) || text.length < 10 || el.querySelectorAll("*").length > 20) return;
-      const answers = findNearbyOptions(el);
-      if (answers.length >= 2) questions.push({ type: "multiple_choice", questionText: text, options: answers, questionElement: el, inputType: "text_only" });
+      
+      let text = el.textContent.trim();
+      if (!pat.test(text)) return;
+      
+      let targetEl = el;
+      // If the matched element is too short (e.g. just a split "Câu 1:"), walk up to merge text
+      if (text.length < 12) {
+        let parent = el.parentElement;
+        let depth = 0;
+        while (parent && depth < 3) {
+          const parentText = parent.textContent.trim();
+          if (parentText.length >= 12 && parentText.length < 500) {
+            targetEl = parent;
+            text = parentText;
+            break;
+          }
+          parent = parent.parentElement;
+          depth++;
+        }
+      }
+      
+      if (text.length < 10 || text.length > 500) return;
+      
+      const answers = findNearbyOptions(targetEl);
+      if (answers.length >= 2) {
+        questions.push({
+          type: "multiple_choice",
+          questionText: text,
+          options: answers,
+          questionElement: targetEl,
+          inputType: "text_only"
+        });
+      }
     });
     return questions;
   }
@@ -844,13 +874,14 @@
 
   function findNearbyOptions(qEl) {
     const opts = [];
+    const optPat = /^\s*[a-d]([\.\)]\s*|\s+)/i;
     
     // Strategy 1: Sibling elements starting with options pattern directly
     let sibling = qEl.nextElementSibling;
     let n = 0;
     while (sibling && n < 10) {
       const text = sibling.textContent.trim();
-      if (/^[a-d][\.\)]\s*/i.test(text)) {
+      if (optPat.test(text)) {
         opts.push({ text: text, element: sibling, labelElement: sibling });
       }
       sibling = sibling.nextElementSibling;
@@ -866,7 +897,7 @@
       for (const item of items) {
         if (item.children.length > 3) continue;
         const text = item.textContent.trim();
-        if (/^[a-d][\.\)]\s*.+/i.test(text)) {
+        if (optPat.test(text)) {
           if (!opts.some(o => o.element.contains(item) || item.contains(o.element))) {
             opts.push({ text: text, element: item, labelElement: item });
           }
@@ -884,7 +915,7 @@
         if (item === qEl || qEl.contains(item)) continue;
         if (item.children.length > 3) continue;
         const text = item.textContent.trim();
-        if (/^[a-d][\.\)]\s*.+/i.test(text)) {
+        if (optPat.test(text)) {
           if (!opts.some(o => o.element.contains(item) || item.contains(o.element))) {
             opts.push({ text: text, element: item, labelElement: item });
           }
