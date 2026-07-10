@@ -507,7 +507,17 @@
       }
 
       if (!extractedQuestions.length) {
-        setStatus("warning", "Không tìm thấy câu hỏi", "Trang này không có câu trắc nghiệm nhận dạng được");
+        let diag = "Diagnostic: ";
+        const possibleEl = Array.from(document.querySelectorAll("p, div, span, td, h1, h2, h3, h4, h5, li")).find(el => {
+          const txt = el.textContent;
+          return txt.includes("Theo c mác") || txt.includes("tư bản là") || txt.includes("Câu 1");
+        });
+        if (possibleEl) {
+          diag += `[Tag: ${possibleEl.tagName}] [Class: ${possibleEl.className}] [HTML: ${possibleEl.outerHTML.slice(0, 150).replace(/</g, "&lt;").replace(/>/g, "&gt;")}]`;
+        } else {
+          diag += "No matching elements found for 'Theo c mác' or 'Câu 1'";
+        }
+        setStatus("warning", "Không tìm thấy câu hỏi", diag.slice(0, 200));
         return;
       }
 
