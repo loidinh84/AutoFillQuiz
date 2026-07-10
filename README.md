@@ -54,29 +54,6 @@
 
 ---
 
-## 📁 Cấu trúc dự án
-
-```
-AutoFillQuiz/
-├── manifest.json              ← Cấu hình Chrome Extension (Manifest V3)
-├── assets/
-│   ├── icon16.png             ← Icons (16, 32, 48, 128px)
-│   ├── icon32.png
-│   ├── icon48.png
-│   └── icon128.png
-├── background/
-│   └── background.js          ← Service worker, gọi Gemini API
-├── content/
-│   ├── content.js             ← Đọc DOM, highlight, auto-fill
-│   └── content.css            ← Styles highlight
-└── popup/
-    ├── popup.html             ← UI 3 tab
-    ├── popup.css              ← Dark glassmorphism UI
-    └── popup.js               ← Controller
-```
-
----
-
 ## 🛠️ Các trang web được hỗ trợ
 
 - ✅ Google Forms
@@ -84,14 +61,6 @@ AutoFillQuiz/
 - ✅ Moodle, LMS nội bộ
 - ✅ Bất kỳ trang có câu hỏi radio/checkbox/select
 - ✅ Dạng điền từ (text input)
-
----
-
-## ⚠️ Lưu ý
-
-- API key được lưu trong **Chrome storage** (local, không gửi đi đâu khác ngoài Gemini API)
-- Gemini API miễn phí với giới hạn **15 requests/phút**
-- Extension chỉ hoạt động trên **Chrome/Edge/Brave** (hỗ trợ Manifest V3)
 
 ---
 

@@ -428,7 +428,6 @@ body::after {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
-  text-transform: uppercase;
   letter-spacing: 0.7px;
   margin-bottom: 8px;
 }
@@ -460,6 +459,7 @@ body::after {
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
   -webkit-text-fill-color: var(--text-primary);
+  appearance: none;
 }
 
 .input-group select { cursor: pointer; }
