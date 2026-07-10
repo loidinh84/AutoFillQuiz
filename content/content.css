@@ -98,7 +98,7 @@
 #aqz-panel-host {
   position: fixed !important;
   top: 80px !important;
-  right: 24px !important;
+  left: calc(100vw - 394px) !important;
   width: 370px !important;
   z-index: 2147483647 !important;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
@@ -415,6 +415,15 @@
   outline: none !important;
   transition: border-color 0.2s, box-shadow 0.2s !important;
   -webkit-text-fill-color: #f1f5f9 !important;
+  appearance: auto !important;
+  -webkit-appearance: auto !important;
+}
+
+/* Fix dropdown options contrast */
+.aqz-input-wrap select option {
+  background: #1e293b !important;
+  color: #f1f5f9 !important;
+  padding: 6px 10px !important;
 }
 
 .aqz-input-wrap input:focus,

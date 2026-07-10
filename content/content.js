@@ -185,7 +185,6 @@
                   <svg id="aqz-eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                 </button>
               </div>
-              <p class="aqz-hint">Lấy miễn phí tại <a href="https://aistudio.google.com/apikey" id="aqz-link-key" target="_blank">aistudio.google.com/apikey</a> → Create API key</p>
             </div>
 
             <div class="aqz-settings-section">
@@ -216,21 +215,6 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
               Lưu Cài Đặt
             </button>
-
-            <div class="aqz-sep"></div>
-
-            <div class="aqz-guide">
-              <h4>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                Hướng dẫn lấy API Key
-              </h4>
-              <ol class="aqz-steps">
-                <li><span class="aqz-step-num">1</span> Truy cập <a href="https://aistudio.google.com/apikey" id="aqz-link-guide" target="_blank" style="color:#818cf8">aistudio.google.com/apikey</a></li>
-                <li><span class="aqz-step-num">2</span> Đăng nhập bằng tài khoản Google</li>
-                <li><span class="aqz-step-num">3</span> Click <strong style="color:#a5b4fc">"Create API key"</strong> → Copy key</li>
-                <li><span class="aqz-step-num">4</span> Dán vào ô phía trên → Lưu Cài Đặt</li>
-              </ol>
-            </div>
           </div>
 
         </div><!-- /body -->
@@ -347,16 +331,17 @@
       let newLeft = startLeft + dx;
       let newTop  = startTop  + dy;
 
-      // Clamp within viewport
+      // Clamp within viewport — keep at least header visible
       const panelW = panel.offsetWidth;
       const panelH = panel.offsetHeight;
       newLeft = Math.max(0, Math.min(window.innerWidth  - panelW, newLeft));
-      newTop  = Math.max(0, Math.min(window.innerHeight - panelH, newTop));
+      newTop  = Math.max(0, Math.min(window.innerHeight - 44, newTop));
 
-      panel.style.left   = newLeft + "px";
-      panel.style.top    = newTop  + "px";
-      panel.style.right  = "auto";
-      panel.style.bottom = "auto";
+      // Use setProperty with 'important' to override CSS !important rules
+      panel.style.setProperty('left',   newLeft + 'px', 'important');
+      panel.style.setProperty('top',    newTop  + 'px', 'important');
+      panel.style.setProperty('right',  'auto',          'important');
+      panel.style.setProperty('bottom', 'auto',          'important');
     });
 
     document.addEventListener("mouseup", () => {
@@ -365,19 +350,18 @@
       document.body.style.userSelect = "";
       panel.style.transition = "";
       // Save position
-      chrome.storage.local.set({
-        aqzPanelLeft: panel.style.left,
-        aqzPanelTop:  panel.style.top
-      });
+      const left = panel.style.getPropertyValue('left');
+      const top  = panel.style.getPropertyValue('top');
+      if (left) chrome.storage.local.set({ aqzPanelLeft: left, aqzPanelTop: top });
     });
   }
 
   function restorePanelPosition(panel) {
     chrome.storage.local.get(["aqzPanelLeft", "aqzPanelTop"], result => {
       if (result.aqzPanelLeft) {
-        panel.style.left  = result.aqzPanelLeft;
-        panel.style.top   = result.aqzPanelTop;
-        panel.style.right = "auto";
+        panel.style.setProperty('left',  result.aqzPanelLeft, 'important');
+        panel.style.setProperty('top',   result.aqzPanelTop,  'important');
+        panel.style.setProperty('right', 'auto',               'important');
       }
     });
   }
@@ -565,6 +549,7 @@
   function extractRadioGroups() {
     const questions = [], groups = {};
     document.querySelectorAll('input[type="radio"]').forEach(r => {
+      if (r.closest('#aqz-panel-host')) return; // skip our own panel
       const name = r.name || "g_" + Math.random();
       if (!groups[name]) groups[name] = [];
       groups[name].push(r);
@@ -583,6 +568,7 @@
   function extractCheckboxGroups() {
     const questions = [], processed = new Set();
     document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      if (cb.closest('#aqz-panel-host')) return; // skip our own panel
       if (processed.has(cb)) return;
       const container = findCheckboxContainer(cb);
       if (!container) return;
@@ -601,6 +587,7 @@
   function extractSelectDropdowns() {
     const questions = [];
     document.querySelectorAll("select").forEach(sel => {
+      if (sel.closest('#aqz-panel-host')) return; // skip our own panel
       const validOpts = Array.from(sel.options).filter(o => o.value && o.text.trim());
       if (validOpts.length < 2) return;
       const questionText = findQuestionText(sel);
@@ -650,6 +637,7 @@
     const questions = [];
     const pat = /^(\d+[\.\)]\s+|câu\s+\d+|question\s+\d+)/i;
     document.querySelectorAll("p, li, div, span, h1,h2,h3,h4,h5, td").forEach(el => {
+      if (el.closest('#aqz-panel-host')) return; // skip our own panel
       const text = el.textContent.trim();
       if (!pat.test(text) || text.length < 10 || el.querySelectorAll("*").length > 20) return;
       const answers = findNearbyOptions(el);
