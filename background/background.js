@@ -11,18 +11,19 @@ chrome.action.onClicked.addListener(async (tab) => {
   // Inject content script in case it's not loaded yet (e.g. on chrome:// pages it won't work)
   try {
     await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
+      target: { tabId: tab.id, allFrames: true },
       files: ["content/content.js"]
     });
     await chrome.scripting.insertCSS({
-      target: { tabId: tab.id },
+      target: { tabId: tab.id, allFrames: true },
       files: ["content/content.css"]
     });
   } catch (e) {
     // Already injected or restricted page — ignore
   }
 
-  chrome.tabs.sendMessage(tab.id, { type: "AQZ_TOGGLE_PANEL" }).catch(() => {});
+  // Only toggle panel in the main frame (frame 0)
+  chrome.tabs.sendMessage(tab.id, { type: "AQZ_TOGGLE_PANEL" }, { frameId: 0 }).catch(() => {});
 });
 
 // ─── Message router ────────────────────────
@@ -44,6 +45,62 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       ["geminiApiKey", "modelName", "autoHighlight", "showExplanation", "vietnamese"],
       result => sendResponse({ success: true, data: result })
     );
+    return true;
+  }
+
+  // Gather questions from all frames in the tab
+  if (message.type === "AQZ_REQUEST_ALL_FRAMES_DATA") {
+    chrome.webNavigation.getAllFrames({ tabId: sender.tab.id }, (frames) => {
+      if (!frames || frames.length === 0) {
+        sendResponse({ success: true, questions: [] });
+        return;
+      }
+
+      const promises = frames.map(frame => {
+        return new Promise(resolve => {
+          chrome.tabs.sendMessage(
+            sender.tab.id,
+            { type: "AQZ_FRAME_EXTRACT" },
+            { frameId: frame.frameId },
+            response => {
+              if (chrome.runtime.lastError || !response || !response.questions) {
+                resolve([]);
+              } else {
+                // Attach frameId so we can send actions back to the correct frame
+                resolve(response.questions.map(q => ({ ...q, frameId: frame.frameId })));
+              }
+            }
+          );
+        });
+      });
+
+      Promise.all(promises).then(results => {
+        const allQuestions = results.flat();
+        sendResponse({ success: true, questions: allQuestions });
+      });
+    });
+    return true;
+  }
+
+  // Dispatch highlights/autofill to specific frames
+  if (message.type === "AQZ_SEND_ALL_FRAMES_DATA") {
+    const { targetType, resultsByFrame } = message.payload;
+    
+    Object.entries(resultsByFrame).forEach(([frameIdStr, data]) => {
+      const frameId = parseInt(frameIdStr, 10);
+      chrome.tabs.sendMessage(
+        sender.tab.id,
+        { type: targetType, payload: { results: data } },
+        { frameId: frameId },
+        () => {
+          if (chrome.runtime.lastError) {
+            // Ignore error for frames that might have unloaded
+          }
+        }
+      );
+    });
+
+    sendResponse({ success: true });
     return true;
   }
 });

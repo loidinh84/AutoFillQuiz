@@ -12,6 +12,8 @@
   }
   window.__aqzLoaded = true;
 
+  const isMainFrame = (window === window.top);
+
   // ─── State ──────────────────────────────
   let panelVisible    = false;
   let panelMinimized  = false;
@@ -27,31 +29,41 @@
   };
 
   // ─── Init ────────────────────────────────
-  loadSettings().then(() => {
-    buildPanel();
+  if (isMainFrame) {
+    loadSettings().then(() => {
+      buildPanel();
+      chrome.runtime.onMessage.addListener(handleMessage);
+    });
+  } else {
     chrome.runtime.onMessage.addListener(handleMessage);
-  });
+  }
 
   // ─── Message handler ─────────────────────
   function handleMessage(message, sender, sendResponse) {
     switch (message.type) {
       case "AQZ_TOGGLE_PANEL":
-        togglePanel();
+        if (isMainFrame) togglePanel();
         sendResponse({ success: true });
         break;
-      case "AQZ_EXTRACT":
+      case "AQZ_FRAME_EXTRACT":
         extractedQuestions = extractQuestions();
-        sendResponse({ success: true, questions: extractedQuestions });
+        // Return serializable question data (without DOM element references)
+        const serializableQuestions = extractedQuestions.map(q => ({
+          type: q.type,
+          questionText: q.questionText,
+          options: (q.options || []).map(o => ({ text: o.text }))
+        }));
+        sendResponse({ success: true, questions: serializableQuestions });
         break;
-      case "AQZ_HIGHLIGHT":
+      case "AQZ_FRAME_HIGHLIGHT":
         applyHighlights(message.payload.results);
         sendResponse({ success: true });
         break;
-      case "AQZ_AUTO_FILL":
+      case "AQZ_FRAME_AUTO_FILL":
         autoFillAnswers(message.payload.results);
         sendResponse({ success: true });
         break;
-      case "AQZ_CLEAR":
+      case "AQZ_FRAME_CLEAR":
         clearHighlights();
         sendResponse({ success: true });
         break;
@@ -68,8 +80,6 @@
     const existing = document.getElementById("aqz-panel-host");
     if (existing) existing.remove();
 
-    const iconUrl = chrome.runtime.getURL("assets/icon48.png");
-
     const host = document.createElement("div");
     host.id = "aqz-panel-host";
     host.innerHTML = `
@@ -77,7 +87,16 @@
 
         <!-- Header (drag handle) -->
         <div id="aqz-panel-header">
-          <img src="${iconUrl}" id="aqz-panel-logo" alt="" />
+          <svg id="aqz-panel-logo" viewBox="0 0 32 32">
+            <defs>
+              <linearGradient id="aqz-logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#818cf8"/>
+                <stop offset="100%" stop-color="#34d399"/>
+              </linearGradient>
+            </defs>
+            <rect width="32" height="32" rx="8" fill="url(#aqz-logo-grad)"/>
+            <path d="M9 16l5 5 9-9" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
           <div id="aqz-panel-title">
             <h1>AutoFillQuiz</h1>
             <p>AI-powered quiz assistant · kéo để di chuyển</p>
@@ -300,68 +319,80 @@
     makeDraggable(host, host.querySelector("#aqz-panel-header"));
   } // ← end setupPanelEvents
 
-  // ─── Drag (transform approach) ────────────
-  // Uses transform:translate() instead of left/top — immune to CSS conflicts.
-  // Panel CSS keeps right:24px/top:80px for initial placement.
-  // Dragging accumulates offsets applied via inline style transform.
+  // ─── Drag logic (Bulletproof left/top) ──────
   function makeDraggable(panel, handle) {
+    let isDragging = false;
     let startX = 0, startY = 0;
-    let baseX  = 0, baseY  = 0;  // committed offset after each drag
-    let dragDx = 0, dragDy = 0;  // offset within current drag gesture
+    let startLeft = 0, startTop = 0;
 
     handle.style.setProperty('touch-action', 'none', 'important');
 
     handle.addEventListener("pointerdown", e => {
       if (e.target.closest("button, a, input, select, textarea")) return;
       e.preventDefault();
-      handle.setPointerCapture(e.pointerId);
 
+      isDragging = true;
       startX = e.clientX;
       startY = e.clientY;
-      dragDx = 0;
-      dragDy = 0;
+
+      const rect = panel.getBoundingClientRect();
+      startLeft = rect.left;
+      startTop  = rect.top;
+
+      // Instantly switch from CSS right/top to absolute left/top inline styles
+      panel.style.setProperty('left',   startLeft + 'px', 'important');
+      panel.style.setProperty('top',    startTop  + 'px', 'important');
+      panel.style.setProperty('right',  'auto',           'important');
+      panel.style.setProperty('bottom', 'auto',           'important');
 
       panel.style.transition = 'none';
       panel.style.animation  = 'none';
       handle.style.cursor    = 'grabbing';
-    });
+    }, true); // ← Use capture phase to intercept
 
-    handle.addEventListener("pointermove", e => {
-      if (!handle.hasPointerCapture(e.pointerId)) return;
+    window.addEventListener("pointermove", e => {
+      if (!isDragging) return;
       e.preventDefault();
 
-      dragDx = e.clientX - startX;
-      dragDy = e.clientY - startY;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
 
-      panel.style.transform = `translate(${baseX + dragDx}px, ${baseY + dragDy}px)`;
-    });
+      let newLeft = startLeft + dx;
+      let newTop  = startTop  + dy;
 
-    const onEnd = e => {
-      if (!handle.hasPointerCapture(e.pointerId)) return;
-      handle.releasePointerCapture(e.pointerId);
+      // Clamp within viewport
+      newLeft = Math.max(0, Math.min(window.innerWidth  - panel.offsetWidth, newLeft));
+      newTop  = Math.max(0, Math.min(window.innerHeight - 44, newTop));
 
-      baseX += dragDx;
-      baseY += dragDy;
-      dragDx = 0;
-      dragDy = 0;
+      panel.style.setProperty('left',   newLeft + 'px', 'important');
+      panel.style.setProperty('top',    newTop  + 'px', 'important');
+    }, { capture: true, passive: false });
 
-      handle.style.cursor    = '';
+    window.addEventListener("pointerup", () => {
+      if (!isDragging) return;
+      isDragging = false;
+      handle.style.cursor = '';
       panel.style.transition = '';
-      panel.style.transform  = `translate(${baseX}px, ${baseY}px)`;
 
-      chrome.storage.local.set({ aqzDragX: baseX, aqzDragY: baseY });
-    };
+      const left = panel.style.getPropertyValue('left');
+      const top  = panel.style.getPropertyValue('top');
 
-    handle.addEventListener("pointerup",     onEnd);
-    handle.addEventListener("pointercancel", onEnd);
+      if (left && top) {
+        chrome.storage.local.set({
+          aqzPanelLeft: left,
+          aqzPanelTop:  top
+        });
+      }
+    }, { capture: true });
   }
 
   function restorePanelPosition(panel) {
-    chrome.storage.local.get(["aqzDragX", "aqzDragY"], r => {
-      if (r.aqzDragX !== undefined) {
-        const x = Number(r.aqzDragX) || 0;
-        const y = Number(r.aqzDragY) || 0;
-        panel.style.transform = `translate(${x}px, ${y}px)`;
+    chrome.storage.local.get(["aqzPanelLeft", "aqzPanelTop"], result => {
+      if (result.aqzPanelLeft && result.aqzPanelTop) {
+        panel.style.setProperty('left',   result.aqzPanelLeft, 'important');
+        panel.style.setProperty('top',    result.aqzPanelTop,  'important');
+        panel.style.setProperty('right',  'auto',              'important');
+        panel.style.setProperty('bottom', 'auto',              'important');
       }
     });
   }
@@ -369,6 +400,20 @@
   // ════════════════════════════════════════════
   // PART 2: SCAN / ANALYZE
   // ════════════════════════════════════════════
+
+  // ─── Frame Dispatcher ────────────────────
+  function dispatchToFrames(targetType, results) {
+    const resultsByFrame = {};
+    results.forEach(res => {
+      const fId = res.frameId !== undefined ? res.frameId : 0;
+      if (!resultsByFrame[fId]) resultsByFrame[fId] = [];
+      resultsByFrame[fId].push(res);
+    });
+    chrome.runtime.sendMessage({
+      type: "AQZ_SEND_ALL_FRAMES_DATA",
+      payload: { targetType, resultsByFrame }
+    });
+  }
 
   async function onScan() {
     if (isAnalyzing) return;
@@ -386,7 +431,18 @@
 
     try {
       showScanFlash();
-      extractedQuestions = extractQuestions();
+      
+      // Request questions from all frames (including child iframes)
+      const frameResponse = await chrome.runtime.sendMessage({
+        type: "AQZ_REQUEST_ALL_FRAMES_DATA"
+      });
+
+      if (frameResponse && frameResponse.success && frameResponse.questions) {
+        extractedQuestions = frameResponse.questions;
+      } else {
+        // Fallback to local frame only
+        extractedQuestions = extractQuestions().map(q => ({ ...q, frameId: 0 }));
+      }
 
       if (!extractedQuestions.length) {
         setStatus("warning", "Không tìm thấy câu hỏi", "Trang này không có câu trắc nghiệm nhận dạng được");
@@ -411,17 +467,20 @@
 
       if (!response?.success) throw new Error(response?.error || "Lỗi AI");
 
-      analysisResults = response.data;
+      // Attach frameId back to results to maintain frame routing
+      analysisResults = response.data.map((res, idx) => ({
+        ...res,
+        frameId: extractedQuestions[idx]?.frameId
+      }));
 
       const autoHL = document.getElementById("aqz-tog-hl")?.checked ?? settings.autoHighlight;
-      if (autoHL) applyHighlights(analysisResults);
+      if (autoHL) dispatchToFrames("AQZ_FRAME_HIGHLIGHT", analysisResults);
 
       renderResults(analysisResults);
       updateBadge(analysisResults.length);
 
       const ok = analysisResults.filter(r => r.answer && !r.error).length;
       if (ok === 0) {
-        // All failed — likely API quota or bad key
         const firstErr = analysisResults.find(r => r.error)?.error || "Kiểm tra API key";
         setStatus("warning", `0/${extractedQuestions.length} câu thành công`, firstErr.slice(0, 60));
       } else {
@@ -444,18 +503,18 @@
 
   async function onAutoFill() {
     if (!analysisResults.length) return;
-    autoFillAnswers(analysisResults);
+    dispatchToFrames("AQZ_FRAME_AUTO_FILL", analysisResults);
     setStatus("success", "Đã tự động điền!", "Kiểm tra các ô trả lời");
   }
 
   async function onHighlightOnly() {
     if (!analysisResults.length) return;
-    applyHighlights(analysisResults);
+    dispatchToFrames("AQZ_FRAME_HIGHLIGHT", analysisResults);
     setStatus("success", "Đã highlight!", "Xanh = đúng · Mờ = sai");
   }
 
   function onClear() {
-    clearHighlights();
+    dispatchToFrames("AQZ_FRAME_CLEAR", analysisResults);
     clearResultsUI();
     analysisResults = [];
     setStatus("idle", "Sẵn sàng phân tích", "Nhấn \"Quét trang\" để bắt đầu");
@@ -738,6 +797,9 @@
 
   function applyHighlights(results) {
     clearHighlights();
+    if (!extractedQuestions.length) {
+      extractedQuestions = extractQuestions();
+    }
     results.forEach(result => {
       if (!result.answer) return;
       const q = extractedQuestions.find(q => q.questionText.trim() === result.questionText.trim());
@@ -752,7 +814,7 @@
     const correctIndex = result.answer?.answerIndex ?? -1;
     const correctText  = (result.answer?.answerText || "").toLowerCase();
     const correctLetter = (result.answer?.answer || "").toUpperCase();
-    const showExp = document.getElementById("aqz-tog-exp")?.checked ?? settings.showExplanation;
+    const showExp = settings.showExplanation;
 
     options.forEach((opt, idx) => {
       const isCorrect = idx === correctIndex ||
@@ -797,6 +859,9 @@
 
   function autoFillAnswers(results) {
     let filled = 0;
+    if (!extractedQuestions.length) {
+      extractedQuestions = extractQuestions();
+    }
     results.forEach(result => {
       if (!result.answer) return;
       const q = extractedQuestions.find(q => q.questionText.trim() === result.questionText.trim());
@@ -804,7 +869,9 @@
       if (result.type === "fill_blank") { fillTextInput(q, result); filled++; }
       else { fillMCQ(q, result); filled++; }
     });
-    showToast(`⚡ Đã tự động điền ${filled} câu`, "success");
+    if (isMainFrame) {
+      showToast(`⚡ Đã tự động điền ${filled} câu`, "success");
+    }
   }
 
   function fillMCQ(q, result) {
