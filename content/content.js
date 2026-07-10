@@ -85,7 +85,7 @@
     host.innerHTML = `
       <div id="aqz-panel">
 
-        <!-- Header (drag handle) -->
+        <!-- Header -->
         <div id="aqz-panel-header">
           <svg id="aqz-panel-logo" viewBox="0 0 32 32">
             <defs>
@@ -99,7 +99,6 @@
           </svg>
           <div id="aqz-panel-title">
             <h1>AutoFillQuiz</h1>
-            <p>AI-powered quiz assistant · kéo để di chuyển</p>
           </div>
           <button class="aqz-hdr-btn minimize" id="aqz-btn-minimize" title="Thu nhỏ">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -239,11 +238,13 @@
         </div><!-- /body -->
 
         <div id="aqz-panel-footer">AutoFillQuiz v1.0 · Powered by <span>Google Gemini AI</span></div>
+        <div id="aqz-panel-resize-handle" title="Kéo để thay đổi kích thước"></div>
       </div>
     `;
 
     document.body.appendChild(host);
     setupPanelEvents(host);
+    makeResizable(host, host.querySelector("#aqz-panel-resize-handle"));
     restorePanelPosition(host);
     syncSettingsToUI();
   }
@@ -387,14 +388,75 @@
   }
 
   function restorePanelPosition(panel) {
-    chrome.storage.local.get(["aqzPanelLeft", "aqzPanelTop"], result => {
-      if (result.aqzPanelLeft && result.aqzPanelTop) {
-        panel.style.setProperty('left',   result.aqzPanelLeft, 'important');
-        panel.style.setProperty('top',    result.aqzPanelTop,  'important');
-        panel.style.setProperty('right',  'auto',              'important');
-        panel.style.setProperty('bottom', 'auto',              'important');
+    chrome.storage.local.get(
+      ["aqzPanelLeft", "aqzPanelTop", "aqzPanelWidth", "aqzPanelHeight"],
+      result => {
+        if (result.aqzPanelLeft && result.aqzPanelTop) {
+          panel.style.setProperty('left',   result.aqzPanelLeft, 'important');
+          panel.style.setProperty('top',    result.aqzPanelTop,  'important');
+          panel.style.setProperty('right',  'auto',              'important');
+          panel.style.setProperty('bottom', 'auto',              'important');
+        }
+        if (result.aqzPanelWidth && result.aqzPanelHeight) {
+          panel.style.setProperty('width',  result.aqzPanelWidth,  'important');
+          panel.style.setProperty('height', result.aqzPanelHeight, 'important');
+        }
       }
-    });
+    );
+  }
+
+  // ─── Resize logic (Pointer Capture) ────────
+  function makeResizable(panel, handle) {
+    let isResizing = false;
+    let startWidth = 0, startHeight = 0;
+    let startX = 0, startY = 0;
+
+    handle.addEventListener("pointerdown", e => {
+      e.preventDefault();
+      e.stopPropagation();
+      isResizing = true;
+      startX = e.clientX;
+      startY = e.clientY;
+
+      const rect = panel.getBoundingClientRect();
+      startWidth  = rect.width;
+      startHeight = rect.height;
+
+      panel.style.transition = 'none';
+      document.body.style.userSelect = 'none';
+    }, true);
+
+    window.addEventListener("pointermove", e => {
+      if (!isResizing) return;
+      e.preventDefault();
+
+      const dw = e.clientX - startX;
+      const dh = e.clientY - startY;
+
+      // Restrict size bounds: Min width/height, max width/height
+      const newWidth  = Math.max(300, Math.min(window.innerWidth * 0.9, startWidth + dw));
+      const newHeight = Math.max(250, Math.min(window.innerHeight * 0.95, startHeight + dh));
+
+      panel.style.setProperty('width',  newWidth + 'px',  'important');
+      panel.style.setProperty('height', newHeight + 'px', 'important');
+    }, { capture: true, passive: false });
+
+    window.addEventListener("pointerup", () => {
+      if (!isResizing) return;
+      isResizing = false;
+      document.body.style.userSelect = '';
+      panel.style.transition = '';
+
+      const w = panel.style.getPropertyValue('width');
+      const h = panel.style.getPropertyValue('height');
+
+      if (w && h) {
+        chrome.storage.local.set({
+          aqzPanelWidth: w,
+          aqzPanelHeight: h
+        });
+      }
+    }, { capture: true });
   }
 
   // ════════════════════════════════════════════

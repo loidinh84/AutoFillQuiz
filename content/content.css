@@ -102,14 +102,19 @@
   left: auto !important;
   bottom: auto !important;
   width: 370px !important;
+  height: 540px !important;
+  min-width: 300px !important;
+  min-height: 250px !important;
+  max-width: 90vw !important;
+  max-height: 95vh !important;
   z-index: 2147483647 !important;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
   display: none;
   filter: drop-shadow(0 24px 48px rgba(0,0,0,0.7)) !important;
-  /* transform is set by JS for dragging */
 }
 
 #aqz-panel-host.visible { display: block !important; }
+#aqz-panel-host.minimized { height: auto !important; } /* minimized should not force 540px */
 #aqz-panel-host.minimized #aqz-panel-body  { display: none !important; }
 #aqz-panel-host.minimized #aqz-panel-tabs  { display: none !important; }
 #aqz-panel-host.minimized #aqz-panel-footer { display: none !important; }
@@ -123,6 +128,9 @@
   user-select: none !important;
   animation: aqzPanelIn 0.35s cubic-bezier(0.175,0.885,0.32,1.275) !important;
   position: relative !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 /* Ambient glow top */
@@ -238,13 +246,37 @@
 /* ─── Panel body ──────────────────────────── */
 #aqz-panel-body {
   padding: 14px 16px 16px !important;
-  max-height: 480px !important;
+  flex: 1 !important;
   overflow-y: auto !important;
+  min-height: 0 !important; /* critical for nested flex scrolling */
 }
 
 #aqz-panel-body::-webkit-scrollbar { width: 4px !important; }
 #aqz-panel-body::-webkit-scrollbar-track { background: transparent !important; }
 #aqz-panel-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1) !important; border-radius: 4px !important; }
+
+/* ─── Resize handle ───────────────────────── */
+#aqz-panel-resize-handle {
+  position: absolute !important;
+  bottom: 0 !important;
+  right: 0 !important;
+  width: 14px !important;
+  height: 14px !important;
+  cursor: se-resize !important;
+  z-index: 10 !important;
+  background: transparent !important;
+}
+
+#aqz-panel-resize-handle::before {
+  content: '' !important;
+  position: absolute !important;
+  bottom: 3px !important;
+  right: 3px !important;
+  width: 6px !important;
+  height: 6px !important;
+  border-right: 2px solid rgba(255, 255, 255, 0.25) !important;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.25) !important;
+}
 
 .aqz-tab-panel { display: none !important; }
 .aqz-tab-panel.active { display: block !important; }
