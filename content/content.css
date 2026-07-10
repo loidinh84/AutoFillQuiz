@@ -96,16 +96,17 @@
 
 /* ─── Floating Panel Host ─────────────────── */
 #aqz-panel-host {
-  position: fixed !important;  /* keep: must be fixed */
-  top: 80px;                   /* no !important — JS inline style will override */
-  left: calc(100vw - 394px);   /* no !important — JS inline style will override */
-  right: auto;
-  bottom: auto;
+  position: fixed !important;
+  top: 80px !important;
+  right: 24px !important;
+  left: auto !important;
+  bottom: auto !important;
   width: 370px !important;
   z-index: 2147483647 !important;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
   display: none;
   filter: drop-shadow(0 24px 48px rgba(0,0,0,0.7)) !important;
+  /* transform is set by JS for dragging */
 }
 
 #aqz-panel-host.visible { display: block !important; }

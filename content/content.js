@@ -300,26 +300,26 @@
     makeDraggable(host, host.querySelector("#aqz-panel-header"));
   } // ← end setupPanelEvents
 
-  // ─── Drag logic (Pointer Capture API) ────────
-  // setPointerCapture() locks ALL pointer events to handle element,
-  // immune to page interference — no window/document listeners needed.
+  // ─── Drag (transform approach) ────────────
+  // Uses transform:translate() instead of left/top — immune to CSS conflicts.
+  // Panel CSS keeps right:24px/top:80px for initial placement.
+  // Dragging accumulates offsets applied via inline style transform.
   function makeDraggable(panel, handle) {
-    let startX, startY, startLeft, startTop;
+    let startX = 0, startY = 0;
+    let baseX  = 0, baseY  = 0;  // committed offset after each drag
+    let dragDx = 0, dragDy = 0;  // offset within current drag gesture
 
     handle.style.setProperty('touch-action', 'none', 'important');
 
     handle.addEventListener("pointerdown", e => {
       if (e.target.closest("button, a, input, select, textarea")) return;
       e.preventDefault();
-
-      // Capture: all future pointer events go to handle, even outside viewport
       handle.setPointerCapture(e.pointerId);
 
-      const rect = panel.getBoundingClientRect();
-      startX    = e.clientX;
-      startY    = e.clientY;
-      startLeft = rect.left;
-      startTop  = rect.top;
+      startX = e.clientX;
+      startY = e.clientY;
+      dragDx = 0;
+      dragDy = 0;
 
       panel.style.transition = 'none';
       panel.style.animation  = 'none';
@@ -330,43 +330,38 @@
       if (!handle.hasPointerCapture(e.pointerId)) return;
       e.preventDefault();
 
-      let newLeft = startLeft + (e.clientX - startX);
-      let newTop  = startTop  + (e.clientY - startY);
+      dragDx = e.clientX - startX;
+      dragDy = e.clientY - startY;
 
-      newLeft = Math.max(0, Math.min(window.innerWidth  - panel.offsetWidth, newLeft));
-      newTop  = Math.max(0, Math.min(window.innerHeight - 44, newTop));
-
-      panel.style.left   = newLeft + 'px';
-      panel.style.top    = newTop  + 'px';
-      panel.style.right  = 'auto';
-      panel.style.bottom = 'auto';
+      panel.style.transform = `translate(${baseX + dragDx}px, ${baseY + dragDy}px)`;
     });
 
-    const onDragEnd = e => {
+    const onEnd = e => {
       if (!handle.hasPointerCapture(e.pointerId)) return;
       handle.releasePointerCapture(e.pointerId);
+
+      baseX += dragDx;
+      baseY += dragDy;
+      dragDx = 0;
+      dragDy = 0;
+
       handle.style.cursor    = '';
       panel.style.transition = '';
+      panel.style.transform  = `translate(${baseX}px, ${baseY}px)`;
 
-      if (panel.style.left) {
-        chrome.storage.local.set({
-          aqzPanelLeft: panel.style.left,
-          aqzPanelTop:  panel.style.top
-        });
-      }
+      chrome.storage.local.set({ aqzDragX: baseX, aqzDragY: baseY });
     };
 
-    handle.addEventListener("pointerup",     onDragEnd);
-    handle.addEventListener("pointercancel", onDragEnd);
+    handle.addEventListener("pointerup",     onEnd);
+    handle.addEventListener("pointercancel", onEnd);
   }
 
   function restorePanelPosition(panel) {
-    chrome.storage.local.get(["aqzPanelLeft", "aqzPanelTop"], result => {
-      if (result.aqzPanelLeft) {
-        panel.style.left   = result.aqzPanelLeft;
-        panel.style.top    = result.aqzPanelTop;
-        panel.style.right  = 'auto';
-        panel.style.bottom = 'auto';
+    chrome.storage.local.get(["aqzDragX", "aqzDragY"], r => {
+      if (r.aqzDragX !== undefined) {
+        const x = Number(r.aqzDragX) || 0;
+        const y = Number(r.aqzDragY) || 0;
+        panel.style.transform = `translate(${x}px, ${y}px)`;
       }
     });
   }
