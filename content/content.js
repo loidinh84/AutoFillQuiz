@@ -296,6 +296,10 @@
       });
     });
 
+    // Drag
+    makeDraggable(host, host.querySelector("#aqz-panel-header"));
+  } // ← end setupPanelEvents
+
   // ─── Drag logic ───────────────────────────
   function makeDraggable(panel, handle) {
     let isDragging = false;
