@@ -1,0 +1,25 @@
+# Chrome Extension - AutoFillQuiz
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Logs
+*.log
+
+# Node (nếu có dùng build tool sau này)
+node_modules/
+dist/
+build/
+
+# Sensitive (không commit API key)
+.env
+*.env.local
+secrets.json
