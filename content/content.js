@@ -300,30 +300,35 @@
     makeDraggable(host, host.querySelector("#aqz-panel-header"));
   } // ← end setupPanelEvents
 
-  // ─── Drag logic ───────────────────────────
+  // ─── Drag logic (Pointer Capture API) ────────
+  // setPointerCapture() locks ALL pointer events to handle element,
+  // immune to page interference — no window/document listeners needed.
   function makeDraggable(panel, handle) {
-    let isDragging = false;
     let startX, startY, startLeft, startTop;
 
-    // Use capture phase so page scripts can't block our events
-    handle.addEventListener("mousedown", e => {
+    handle.style.setProperty('touch-action', 'none', 'important');
+
+    handle.addEventListener("pointerdown", e => {
       if (e.target.closest("button, a, input, select, textarea")) return;
       e.preventDefault();
+
+      // Capture: all future pointer events go to handle, even outside viewport
+      handle.setPointerCapture(e.pointerId);
 
       const rect = panel.getBoundingClientRect();
       startX    = e.clientX;
       startY    = e.clientY;
       startLeft = rect.left;
       startTop  = rect.top;
-      isDragging = true;
 
       panel.style.transition = 'none';
       panel.style.animation  = 'none';
-    }, true); // ← capture phase on mousedown
+      handle.style.cursor    = 'grabbing';
+    });
 
-    // Attach to window with capture so page events can't interfere
-    window.addEventListener("mousemove", e => {
-      if (!isDragging) return;
+    handle.addEventListener("pointermove", e => {
+      if (!handle.hasPointerCapture(e.pointerId)) return;
+      e.preventDefault();
 
       let newLeft = startLeft + (e.clientX - startX);
       let newTop  = startTop  + (e.clientY - startY);
@@ -331,24 +336,28 @@
       newLeft = Math.max(0, Math.min(window.innerWidth  - panel.offsetWidth, newLeft));
       newTop  = Math.max(0, Math.min(window.innerHeight - 44, newTop));
 
-      // Regular inline style — overrides CSS rules (higher specificity)
       panel.style.left   = newLeft + 'px';
       panel.style.top    = newTop  + 'px';
       panel.style.right  = 'auto';
       panel.style.bottom = 'auto';
-    }, { capture: true, passive: false });
+    });
 
-    window.addEventListener("mouseup", () => {
-      if (!isDragging) return;
-      isDragging = false;
+    const onDragEnd = e => {
+      if (!handle.hasPointerCapture(e.pointerId)) return;
+      handle.releasePointerCapture(e.pointerId);
+      handle.style.cursor    = '';
       panel.style.transition = '';
+
       if (panel.style.left) {
         chrome.storage.local.set({
           aqzPanelLeft: panel.style.left,
           aqzPanelTop:  panel.style.top
         });
       }
-    }, { capture: true });
+    };
+
+    handle.addEventListener("pointerup",     onDragEnd);
+    handle.addEventListener("pointercancel", onDragEnd);
   }
 
   function restorePanelPosition(panel) {
