@@ -229,6 +229,12 @@
               </div>
             </div>
 
+            <button class="aqz-btn" id="aqz-btn-test-key" style="margin-top:4px;width:100%;background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
+              Kiểm tra API Key
+            </button>
+            <div id="aqz-key-test-result" style="display:none;margin-top:8px;padding:8px 10px;border-radius:8px;font-size:11px;line-height:1.6;border:1px solid rgba(99,102,241,0.3);background:rgba(15,23,42,0.8);color:#cbd5e1;max-height:120px;overflow-y:auto;"></div>
+
             <button class="aqz-btn aqz-btn-primary" id="aqz-btn-save" style="margin-top:4px">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
               Lưu Cài Đặt
@@ -321,6 +327,58 @@
     host
       .querySelector("#aqz-eye-btn")
       .addEventListener("click", onToggleKeyVisibility);
+
+    // Test API Key
+    host.querySelector("#aqz-btn-test-key").addEventListener("click", async () => {
+      const key = document.getElementById("aqz-api-key")?.value.trim() || settings.geminiApiKey;
+      const resultEl = document.getElementById("aqz-key-test-result");
+      const btn = host.querySelector("#aqz-btn-test-key");
+      if (!key) {
+        resultEl.style.display = "block";
+        resultEl.style.borderColor = "rgba(239,68,68,0.4)";
+        resultEl.innerHTML = "❌ Chưa nhập API Key!";
+        return;
+      }
+      btn.textContent = "⏳ Đang kiểm tra...";
+      btn.disabled = true;
+      resultEl.style.display = "none";
+
+      try {
+        const response = await chrome.runtime.sendMessage({ type: "LIST_MODELS", payload: { apiKey: key } });
+        resultEl.style.display = "block";
+        if (response?.models?.length) {
+          const modelList = response.models.slice(0, 10).join("\n");
+          resultEl.style.borderColor = "rgba(34,197,94,0.4)";
+          resultEl.innerHTML = `✅ <strong>API Key hợp lệ!</strong><br>Model khả dụng (${response.models.length}):<br><code style="font-size:10px;white-space:pre;display:block;margin-top:4px;">${response.models.slice(0, 8).join('\n')}</code>`;
+          // Auto-select first flash model if current not in list
+          const selEl = document.getElementById("aqz-model-select");
+          const cur = selEl?.value;
+          if (selEl && !response.models.includes(cur)) {
+            const best = response.models.find(m => m.includes("flash")) || response.models[0];
+            if (best) {
+              // Add option if not already in dropdown
+              if (!selEl.querySelector(`option[value="${best}"]`)) {
+                const opt = document.createElement("option");
+                opt.value = best;
+                opt.textContent = best + " (tự động phát hiện)";
+                selEl.insertBefore(opt, selEl.firstChild);
+              }
+              selEl.value = best;
+            }
+          }
+        } else {
+          resultEl.style.borderColor = "rgba(239,68,68,0.4)";
+          resultEl.innerHTML = "❌ <strong>API Key không hợp lệ</strong> hoặc chưa kích hoạt Gemini API.<br><small>Vào <a href='https://aistudio.google.com/app/apikey' target='_blank' style='color:#a5b4fc'>aistudio.google.com</a> để lấy key mới.</small>";
+        }
+      } catch (err) {
+        resultEl.style.display = "block";
+        resultEl.style.borderColor = "rgba(239,68,68,0.4)";
+        resultEl.innerHTML = `❌ Lỗi: ${err.message}`;
+      } finally {
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg> Kiểm tra API Key`;
+        btn.disabled = false;
+      }
+    });
 
     // External links
     host.querySelectorAll("a[target='_blank']").forEach((a) => {

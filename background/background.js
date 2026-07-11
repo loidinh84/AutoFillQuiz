@@ -56,6 +56,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "LIST_MODELS") {
+    listAvailableModels(message.payload.apiKey)
+      .then(models => sendResponse({ success: true, models }))
+      .catch(() => sendResponse({ success: true, models: [] }));
+    return true;
+  }
+
   // Gather questions from all frames in the tab
   if (message.type === "AQZ_REQUEST_ALL_FRAMES_DATA") {
     chrome.webNavigation.getAllFrames({ tabId: sender.tab.id }, (frames) => {
@@ -114,16 +121,61 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // ─── Gemini API call ───────────────────────
+
+// Model fallback chain: if primary model not available, try alternatives
+const MODEL_FALLBACK_CHAIN = [
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-latest",
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-1.0-pro",
+  "gemini-pro"
+];
+
+// List available models for a given API key
+async function listAvailableModels(apiKey) {
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+      { method: "GET" }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.models || [])
+      .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
+      .map(m => m.name.replace("models/", ""));
+  } catch {
+    return [];
+  }
+}
+
 async function handleAnalyzeQuiz({ questions, apiKey, modelName }) {
   if (!apiKey) throw new Error("Chưa có API key. Vào ⚙️ Cài Đặt để nhập.");
-  const model = modelName || "gemini-1.5-flash";
+  
+  // Build list of models to try: preferred first, then fallbacks
+  const preferred = modelName || "gemini-1.5-flash";
+  const toTry = [preferred, ...MODEL_FALLBACK_CHAIN.filter(m => m !== preferred)];
+  
   const results = [];
   for (const q of questions) {
-    try {
-      const answer = await callGemini(q, apiKey, model);
-      results.push({ ...q, answer });
-    } catch (err) {
-      results.push({ ...q, answer: null, error: err.message });
+    let answered = false;
+    let lastError = null;
+    for (const model of toTry) {
+      try {
+        const answer = await callGemini(q, apiKey, model);
+        results.push({ ...q, answer });
+        answered = true;
+        break;
+      } catch (err) {
+        lastError = err;
+        // Only retry if model not found/not supported
+        if (!err.message.includes("not found") && !err.message.includes("not supported")) {
+          break; // Real error (auth, quota, network) - don't retry other models
+        }
+      }
+    }
+    if (!answered) {
+      results.push({ ...q, answer: null, error: lastError?.message || "Không thể gọi AI" });
     }
   }
   return results;
@@ -152,7 +204,7 @@ async function callGemini(question, apiKey, model) {
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
         const msg = errBody?.error?.message || `HTTP ${res.status}`;
-        // If model not found on this endpoint version, try next
+        // If model not found on this endpoint version, try next endpoint
         if (msg.includes("not found") || msg.includes("not supported") || res.status === 404) {
           lastErr = new Error(msg);
           continue;
@@ -174,6 +226,7 @@ async function callGemini(question, apiKey, model) {
       throw err;
     }
   }
+  // Both endpoints failed - propagate for outer model fallback to try next model
   throw lastErr || new Error("Không thể kết nối đến Gemini API");
 }
 
