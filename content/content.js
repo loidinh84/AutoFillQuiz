@@ -1084,41 +1084,47 @@ ${qLines}`;
 
   // ─── Settings ────────────────────────────
   async function onSaveSettings() {
-    const key = document.getElementById("aqz-api-key")?.value.trim() || "";
-    const model =
-      document.getElementById("aqz-model-select")?.value || "gemini-2.0-flash";
-    const hl = document.getElementById("aqz-tog-hl")?.checked ?? true;
-    const exp = document.getElementById("aqz-tog-exp")?.checked ?? true;
+    try {
+      const key = document.getElementById("aqz-api-key")?.value.trim() || "";
+      const model =
+        document.getElementById("aqz-model-select")?.value || "gemini-2.0-flash";
+      const hl = document.getElementById("aqz-tog-hl")?.checked ?? true;
+      const exp = document.getElementById("aqz-tog-exp")?.checked ?? true;
 
-    settings = {
-      geminiApiKey: key,
-      modelName: model,
-      autoHighlight: hl,
-      showExplanation: exp,
-    };
-
-    await chrome.runtime.sendMessage({
-      type: "SAVE_SETTINGS",
-      payload: {
+      settings = {
         geminiApiKey: key,
         modelName: model,
         autoHighlight: hl,
         showExplanation: exp,
-      },
-    });
+      };
 
-    const btn = document.getElementById("aqz-btn-save");
-    if (btn) {
-      btn.textContent = "✓ Đã lưu!";
-      btn.style.background = "linear-gradient(135deg,#16a34a,#22c55e)";
-      setTimeout(() => {
-        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Lưu Cài Đặt`;
-        btn.style.background = "";
-      }, 2000);
+      await chrome.runtime.sendMessage({
+        type: "SAVE_SETTINGS",
+        payload: {
+          geminiApiKey: key,
+          modelName: model,
+          autoHighlight: hl,
+          showExplanation: exp,
+        },
+      });
+
+      const btn = document.getElementById("aqz-btn-save");
+      if (btn) {
+        btn.textContent = "✓ Đã lưu!";
+        btn.style.background = "linear-gradient(135deg,#16a34a,#22c55e)";
+        setTimeout(() => {
+          btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Lưu Cài Đặt`;
+          btn.style.background = "";
+        }, 2000);
+      }
+
+      showToast("✓ Đã lưu cài đặt", "success");
+    } catch (err) {
+      showToast("⚠️ Lỗi lưu cài đặt: " + err.message, "error");
+      console.error("Save settings error:", err);
     }
-
-    showToast("✓ Đã lưu cài đặt", "success");
   }
+
 
   function onToggleKeyVisibility() {
     const input = document.getElementById("aqz-api-key");
