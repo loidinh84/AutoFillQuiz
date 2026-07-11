@@ -27,6 +27,8 @@
     showExplanation: true,
     vietnamese: true,
   };
+  let apiVerifiedModels = [];
+
 
   // ─── Init ────────────────────────────────
   if (isMainFrame) {
@@ -466,6 +468,9 @@
 
       if (!models.length) throw new Error("Không tìm thấy model nào");
 
+      // Save verified models list
+      apiVerifiedModels = models.map(m => m.id);
+
       // Sort: preferred models first, then alphabetically
       models.sort((a, b) => {
         const ai = PREFERRED_ORDER.indexOf(a.id);
@@ -704,8 +709,16 @@
 
   const GEMINI_V1     = "https://generativelanguage.googleapis.com/v1/models";
   const GEMINI_V1BETA = "https://generativelanguage.googleapis.com/v1beta/models";
-  const EXCLUDED_MODELS_CS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-preview"];
-  const MODEL_CHAIN_CS = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.0-pro", "gemini-pro"];
+  const EXCLUDED_MODELS_CS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-preview", "gemini-pro", "gemini-1.0-pro"];
+  const MODEL_CHAIN_CS = [
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-flash-latest",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-latest",
+    "gemini-flash-lite-latest",
+    "gemini-1.5-flash-001"
+  ];
   const BATCH_SIZE = 25;        // questions per API call (safe for token limits)
   const BATCH_DELAY_MS = 4500;  // delay between batches to respect 15 RPM
 
@@ -791,7 +804,10 @@ ${qLines}`;
     const batchLabel = totalBatches > 1 ? ` (nhóm ${batchIndex + 1}/${totalBatches})` : "";
     const preferred = (modelName && !EXCLUDED_MODELS_CS.some(ex => modelName.startsWith(ex)))
       ? modelName : "gemini-2.0-flash";
-    const modelsToTry = [preferred, ...MODEL_CHAIN_CS.filter(m => m !== preferred)];
+    
+    // Build fallback chain dynamically based on verified API models, falling back to MODEL_CHAIN_CS
+    const baseChain = apiVerifiedModels.length ? apiVerifiedModels : MODEL_CHAIN_CS;
+    const modelsToTry = [preferred, ...baseChain.filter(m => m !== preferred && !EXCLUDED_MODELS_CS.some(ex => m.startsWith(ex)))];
 
     let currentModelIdx = 0;
     let currentKeyIdx = 0;
@@ -852,6 +868,7 @@ ${qLines}`;
         }
       }
     }
+
     // If all models and all keys failed, return the actual last failure message
     return batch.map(q => ({ ...q, answer: null, error: `Lỗi: ${lastErrMessage}` }));
   }
@@ -882,6 +899,15 @@ ${qLines}`;
     // Split key input into individual keys
     const apiKeys = apiKeyInput.split(/[\s,;\n]+/).map(k => k.trim()).filter(Boolean);
     if (!apiKeys.length) throw new Error("Chưa nhập API key hợp lệ.");
+
+    // Load actual models list if not loaded yet
+    if (!apiVerifiedModels.length && apiKeys[0]) {
+      try {
+        await loadModelsIntoSelect(apiKeys[0]);
+      } catch (e) {
+        // Ignore and use hardcoded fallback
+      }
+    }
 
     // Split into batches of BATCH_SIZE
     const batches = [];
