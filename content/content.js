@@ -595,6 +595,126 @@
     });
   }
 
+  // ════════════════════════════════════════════
+  // ─── Gemini API — runs in tab context (no service worker timeout) ──
+  // ════════════════════════════════════════════
+
+  const GEMINI_V1     = "https://generativelanguage.googleapis.com/v1/models";
+  const GEMINI_V1BETA = "https://generativelanguage.googleapis.com/v1beta/models";
+  const EXCLUDED_MODELS_CS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-preview"];
+  const MODEL_CHAIN_CS = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.0-pro", "gemini-pro"];
+  const REQUEST_DELAY_MS = 4500; // ~13 RPM, safely under free-tier 15 RPM limit
+
+  function sleepCS(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  function parseRetryMS(msg) {
+    const m = msg.match(/retry in (\d+(?:\.\d+)?)s/i);
+    return m ? Math.ceil(parseFloat(m[1]) * 1000) : 30000;
+  }
+
+  function buildPromptCS({ type, questionText, options }) {
+    if (type === "fill_blank") {
+      return `Bạn là trợ lý học tập. Điền vào chỗ trống phù hợp nhất.\nCÂU HỎI: "${questionText}"\nTrả về JSON: {"answer":"từ cần điền","explanation":"lý do ngắn","confidence":"high|medium|low"}`;
+    }
+    const list = (options || []).map((o, i) => `${String.fromCharCode(65 + i)}. ${o.text}`).join("\n");
+    return `Bạn là trợ lý học tập. Chọn đáp án đúng nhất cho câu trắc nghiệm sau.\nCÂU HỎI: "${questionText}"\nCÁC LỰA CHỌN:\n${list}\nTrả về JSON: {"answer":"chữ cái A/B/C...","answerIndex":số_0_based,"answerText":"nội dung đáp án","explanation":"lý do ngắn","confidence":"high|medium|low"}`;
+  }
+
+  async function callGeminiCS(question, apiKey, model) {
+    const prompt = buildPromptCS(question);
+    const endpoints = model.startsWith("gemini-2") ? [GEMINI_V1BETA, GEMINI_V1] : [GEMINI_V1, GEMINI_V1BETA];
+    let lastErr = null;
+    for (const base of endpoints) {
+      try {
+        const res = await fetch(`${base}/${model}:generateContent?key=${apiKey}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.1, maxOutputTokens: 512 }
+          })
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          const msg = errBody?.error?.message || `HTTP ${res.status}`;
+          if (msg.includes("not found") || msg.includes("not supported") || res.status === 404 || msg.includes("no longer available")) {
+            lastErr = new Error(msg); continue;
+          }
+          throw new Error(msg);
+        }
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) throw new Error("Không có phản hồi từ AI");
+        try { return JSON.parse(text); }
+        catch { return { answer: text.trim(), explanation: "", confidence: "medium" }; }
+      } catch (err) {
+        if (err.message.includes("not found") || err.message.includes("not supported") || err.message.includes("no longer available")) {
+          lastErr = err; continue;
+        }
+        throw err;
+      }
+    }
+    throw lastErr || new Error("Không thể kết nối Gemini API");
+  }
+
+  async function analyzeQuizDirect(questions, apiKey, modelName) {
+    // Pick safe starting model (skip deprecated 2.5)
+    const preferred = (modelName && !EXCLUDED_MODELS_CS.some(ex => modelName.startsWith(ex)))
+      ? modelName : "gemini-2.0-flash";
+    const toTry = [preferred, ...MODEL_CHAIN_CS.filter(m => m !== preferred)];
+
+    // Detect working model with first question
+    let workingModel = preferred;
+    for (const model of toTry) {
+      try {
+        await callGeminiCS(questions[0], apiKey, model);
+        workingModel = model; break;
+      } catch (err) {
+        const isModelUnavail = err.message.includes("not found") || err.message.includes("not supported") || err.message.includes("no longer available");
+        if (!isModelUnavail) { workingModel = model; break; } // quota/rate limit — model exists
+      }
+    }
+
+    const results = [];
+    // First question was already called above, add it to results
+    try {
+      const firstAnswer = await callGeminiCS(questions[0], apiKey, workingModel);
+      results.push({ ...questions[0], answer: firstAnswer });
+    } catch (err) {
+      results.push({ ...questions[0], answer: null, error: err.message });
+    }
+
+    for (let i = 1; i < questions.length; i++) {
+      const q = questions[i];
+      await sleepCS(REQUEST_DELAY_MS); // throttle between requests
+      setStatus("loading", `Phân tích câu ${i + 1}/${questions.length}...`, `Model: ${workingModel}`);
+
+      let retries = 2;
+      let done = false;
+      while (!done) {
+        try {
+          const answer = await callGeminiCS(q, apiKey, workingModel);
+          results.push({ ...q, answer });
+          done = true;
+        } catch (err) {
+          const isQuota = err.message.includes("quota") || err.message.includes("Quota") ||
+                          err.message.includes("RESOURCE_EXHAUSTED") || err.message.includes("429");
+          if (isQuota && retries > 0) {
+            const waitMs = Math.min(parseRetryMS(err.message), 60000);
+            setStatus("loading", `Rate limit — chờ ${Math.ceil(waitMs / 1000)}s`, `Sẽ retry câu ${i + 1}/${questions.length}`);
+            await sleepCS(waitMs);
+            retries--;
+          } else {
+            results.push({ ...q, answer: null, error: err.message });
+            done = true;
+          }
+        }
+      }
+    }
+    return results;
+  }
+
+
   async function onScan() {
     if (isAnalyzing) return;
     const apiKey =
@@ -661,23 +781,22 @@
       const modelName =
         document.getElementById("aqz-model-select")?.value ||
         settings.modelName;
-      const response = await chrome.runtime.sendMessage({
-        type: "ANALYZE_QUIZ",
-        payload: {
-          questions: extractedQuestions.map((q) => ({
-            type: q.type,
-            questionText: q.questionText,
-            options: (q.options || []).map((o) => ({ text: o.text })),
-          })),
-          apiKey,
-          modelName,
-        },
-      });
 
-      if (!response?.success) throw new Error(response?.error || "Lỗi AI");
+      // ► Call Gemini API directly in tab context (no service worker — avoids 30s timeout)
+      const rawResults = await analyzeQuizDirect(
+        extractedQuestions.map((q) => ({
+          type: q.type,
+          questionText: q.questionText,
+          options: (q.options || []).map((o) => ({ text: o.text })),
+        })),
+        apiKey,
+        modelName
+      );
+
+      if (!rawResults) throw new Error("Không nhận được kết quả từ AI");
 
       // Attach frameId back to results to maintain frame routing
-      analysisResults = response.data.map((res, idx) => ({
+      analysisResults = rawResults.map((res, idx) => ({
         ...res,
         frameId: extractedQuestions[idx]?.frameId,
       }));
