@@ -2,7 +2,15 @@
 // AutoFillQuiz - Background Service Worker
 // ==========================================
 
-const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+const GEMINI_BASE_V1     = "https://generativelanguage.googleapis.com/v1/models";
+const GEMINI_BASE_V1BETA = "https://generativelanguage.googleapis.com/v1beta/models";
+
+// Choose correct API endpoint version based on model
+function getGeminiBase(model) {
+  // gemini-2.x requires v1beta; gemini-1.x works on stable v1
+  if (model && model.startsWith("gemini-2")) return GEMINI_BASE_V1BETA;
+  return GEMINI_BASE_V1;
+}
 
 // ─── Icon click → toggle floating panel ────
 chrome.action.onClicked.addListener(async (tab) => {
@@ -123,12 +131,13 @@ async function handleAnalyzeQuiz({ questions, apiKey, modelName }) {
 
 async function callGemini(question, apiKey, model) {
   const prompt = buildPrompt(question);
-  const res = await fetch(`${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`, {
+  const base = getGeminiBase(model);
+  const res = await fetch(`${base}/${model}:generateContent?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 512, responseMimeType: "application/json" }
+      generationConfig: { temperature: 0.1, maxOutputTokens: 512 }
     })
   });
 
