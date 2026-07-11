@@ -155,33 +155,71 @@ async function listAvailableModels(apiKey) {
   }
 }
 
+const INTER_REQUEST_DELAY_MS = 4500; // 4.5s between requests → ~13 RPM, safely under free-tier 15 RPM limit
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// Extract retry-after seconds from Gemini quota error message
+function parseRetryAfter(msg) {
+  const match = msg.match(/retry in (\d+(?:\.\d+)?)s/i);
+  return match ? Math.ceil(parseFloat(match[1]) * 1000) : 30000;
+}
+
 async function handleAnalyzeQuiz({ questions, apiKey, modelName }) {
   if (!apiKey) throw new Error("Chưa có API key. Vào ⚙️ Cài Đặt để nhập.");
-  
+
   // Build list of models to try: preferred first, then fallbacks
-  const preferred = modelName || "gemini-1.5-flash";
+  const preferred = modelName || "gemini-2.0-flash";
   const toTry = [preferred, ...MODEL_FALLBACK_CHAIN.filter(m => m !== preferred)];
-  
+
+  // Find working model upfront (try first question to confirm model availability)
+  let workingModel = null;
+  for (const model of toTry) {
+    try {
+      await callGemini(questions[0], apiKey, model);
+      workingModel = model;
+      break;
+    } catch (err) {
+      if (!err.message.includes("not found") && !err.message.includes("not supported") && !err.message.includes("no longer available")) {
+        // Rate limit or quota error — use this model but handle quota below
+        workingModel = model;
+        break;
+      }
+      // Model not available → try next
+    }
+  }
+  if (!workingModel) workingModel = preferred; // fallback
+
   const results = [];
-  for (const q of questions) {
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
+    
+    // Add delay between requests to stay within free-tier rate limit (15 RPM)
+    if (i > 0) {
+      await sleep(INTER_REQUEST_DELAY_MS);
+    }
+
     let answered = false;
-    let lastError = null;
-    for (const model of toTry) {
+    let retries = 2;
+    while (retries >= 0) {
       try {
-        const answer = await callGemini(q, apiKey, model);
+        const answer = await callGemini(q, apiKey, workingModel);
         results.push({ ...q, answer });
         answered = true;
         break;
       } catch (err) {
-        lastError = err;
-        // Only retry if model not found/not supported
-        if (!err.message.includes("not found") && !err.message.includes("not supported")) {
-          break; // Real error (auth, quota, network) - don't retry other models
+        const isRateLimit = err.message.includes("quota") || err.message.includes("Quota") || err.message.includes("429") || err.message.includes("RESOURCE_EXHAUSTED");
+        if (isRateLimit && retries > 0) {
+          // Wait the suggested retry-after period then retry
+          const waitMs = parseRetryAfter(err.message);
+          await sleep(Math.min(waitMs, 60000)); // cap at 60s
+          retries--;
+        } else {
+          results.push({ ...q, answer: null, error: err.message });
+          answered = true; // mark as handled (with error)
+          break;
         }
       }
-    }
-    if (!answered) {
-      results.push({ ...q, answer: null, error: lastError?.message || "Không thể gọi AI" });
     }
   }
   return results;

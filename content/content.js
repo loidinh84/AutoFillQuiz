@@ -650,11 +650,13 @@
         return;
       }
 
+      const estSecs = extractedQuestions.length * 5;
       setStatus(
         "loading",
-        `Tìm thấy ${extractedQuestions.length} câu`,
-        "AI đang suy luận...",
+        `Đang phân tích ${extractedQuestions.length} câu...`,
+        `AI đang xử lý — ước tính ~${estSecs}s (tránh rate limit)`,
       );
+
 
       const modelName =
         document.getElementById("aqz-model-select")?.value ||
