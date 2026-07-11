@@ -438,6 +438,7 @@
 }
 
 .aqz-input-wrap input,
+.aqz-input-wrap textarea,
 .aqz-input-wrap select {
   width: 100% !important;
   padding: 9px 10px 9px 32px !important;
@@ -454,6 +455,26 @@
   -webkit-appearance: auto !important;
 }
 
+.aqz-input-wrap textarea {
+  resize: vertical !important;
+  min-height: 52px !important;
+  line-height: 1.5 !important;
+}
+
+.aqz-input-wrap.aqz-has-textarea svg.prefix {
+  top: 10px !important;
+  transform: none !important;
+}
+
+.aqz-input-wrap.aqz-has-textarea .aqz-eye-btn {
+  top: 10px !important;
+  transform: none !important;
+}
+
+.aqz-masked {
+  -webkit-text-security: disc !important;
+}
+
 /* Fix dropdown options contrast */
 .aqz-input-wrap select option {
   background: #1e293b !important;
@@ -462,10 +483,12 @@
 }
 
 .aqz-input-wrap input:focus,
+.aqz-input-wrap textarea:focus,
 .aqz-input-wrap select:focus {
   border-color: rgba(99,102,241,0.6) !important;
   box-shadow: 0 0 0 3px rgba(99,102,241,0.15) !important;
 }
+
 
 .aqz-eye-btn {
   position: absolute !important; right: 8px !important; top: 50% !important;

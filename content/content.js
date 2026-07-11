@@ -196,9 +196,9 @@
 
             <div class="aqz-settings-section">
               <label>Gemini API Key(s)</label>
-              <div class="aqz-input-wrap">
+              <div class="aqz-input-wrap aqz-has-textarea">
                 <svg class="prefix" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                <input type="password" id="aqz-api-key" placeholder="Key1, Key2, Key3 (Phân cách bằng dấu phẩy)" autocomplete="off" spellcheck="false" />
+                <textarea id="aqz-api-key" class="aqz-masked" placeholder="Dán các key tại đây. Mỗi key nằm trên một dòng riêng hoặc cách nhau bởi dấu phẩy." autocomplete="off" spellcheck="false" rows="2"></textarea>
                 <button class="aqz-eye-btn" id="aqz-eye-btn" title="Hiện/ẩn">
                   <svg id="aqz-eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                 </button>
@@ -391,7 +391,7 @@
       } catch (err) {
         resultEl.style.display = "block";
         resultEl.style.borderColor = "rgba(239,68,68,0.4)";
-        resultEl.innerHTML = `❌ Lỗi hệ thống: ${err.message}`;
+        resultEl.innerHTML = `Lỗi hệ thống: ${err.message}`;
       } finally {
         btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg> Kiểm tra API Key`;
         btn.disabled = false;
@@ -1114,13 +1114,18 @@ ${qLines}`;
   function onToggleKeyVisibility() {
     const input = document.getElementById("aqz-api-key");
     const icon = document.getElementById("aqz-eye-icon");
-    if (!input) return;
-    const isPassword = input.type === "password";
-    input.type = isPassword ? "text" : "password";
-    icon.innerHTML = isPassword
+    if (!input || !icon) return;
+    const isMasked = input.classList.contains("aqz-masked");
+    if (isMasked) {
+      input.classList.remove("aqz-masked");
+    } else {
+      input.classList.add("aqz-masked");
+    }
+    icon.innerHTML = isMasked
       ? `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>`
       : `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`;
   }
+
 
   async function loadSettings() {
     return new Promise((resolve) => {
