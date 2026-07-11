@@ -792,50 +792,56 @@ ${qLines}`;
     }
   }
 
-  // Detect working model upfront (cheap test)
-  async function detectModel(apiKey, preferred) {
-    const toTry = [preferred, ...MODEL_CHAIN_CS.filter(m => m !== preferred)];
-    for (const model of toTry) {
-      try {
-        await geminiRequest("Test. Reply: OK", apiKey, model, 10);
-        return model;
-      } catch (err) {
-        const isUnavail = err.message.includes("not found") || err.message.includes("not supported") || err.message.includes("no longer available");
-        if (!isUnavail) return model; // Rate limit / quota → model IS available
-      }
-    }
-    return preferred;
-  }
-
-  // Process a single batch — with retry on quota errors
-  async function processBatch(batch, apiKey, model, batchIndex, totalBatches) {
+  // Process a single batch — with fallback to alternative models if the primary model is out of quota
+  async function processBatch(batch, apiKey, modelName, batchIndex, totalBatches) {
     const batchLabel = totalBatches > 1 ? ` (nhóm ${batchIndex + 1}/${totalBatches})` : "";
-    setStatus("loading", `Đang phân tích${batchLabel}...`, `${batch.length} câu · Model: ${model}`);
+    const preferred = (modelName && !EXCLUDED_MODELS_CS.some(ex => modelName.startsWith(ex)))
+      ? modelName : "gemini-2.0-flash";
+    const modelsToTry = [preferred, ...MODEL_CHAIN_CS.filter(m => m !== preferred)];
 
-    let retries = 3;
-    while (retries >= 0) {
+    let currentModelIdx = 0;
+    let retries = 2;
+
+    while (currentModelIdx < modelsToTry.length) {
+      const activeModel = modelsToTry[currentModelIdx];
+      setStatus("loading", `Đang phân tích${batchLabel}...`, `${batch.length} câu · Model: ${activeModel}`);
       try {
         const prompt = buildBatchPrompt(batch);
-        const text = await geminiRequest(prompt, apiKey, model, Math.min(2048, batch.length * 80));
+        const text = await geminiRequest(prompt, apiKey, activeModel, Math.min(2048, batch.length * 80));
         const parsed = parseBatchResponse(text, batch);
         if (parsed) return parsed;
         // Batch parse failed — fallback to individual
-        return await processIndividual(batch, apiKey, model, batchIndex, totalBatches);
+        return await processIndividual(batch, apiKey, activeModel, batchIndex, totalBatches);
       } catch (err) {
         const isQuota = err.message.includes("quota") || err.message.includes("Quota") ||
-                        err.message.includes("RESOURCE_EXHAUSTED") || err.message.includes("429");
-        if (isQuota && retries > 0) {
-          const waitMs = Math.min(parseRetryMS(err.message), 60000);
-          setStatus("loading", `Rate limit — chờ ${Math.ceil(waitMs / 1000)}s${batchLabel}`, "Sẽ tự động retry...");
-          await sleepCS(waitMs);
-          retries--;
+                        err.message.includes("RESOURCE_EXHAUSTED") || err.message.includes("429") ||
+                        err.message.includes("limit");
+        
+        if (isQuota) {
+          // If we have retries left for the CURRENT model, wait and retry
+          if (retries > 0) {
+            const waitMs = Math.min(parseRetryMS(err.message), 15000); // Wait up to 15s max for rate-limits
+            setStatus("loading", `Rate limit — chờ ${Math.ceil(waitMs / 1000)}s${batchLabel}`, `Sắp thử lại với ${activeModel}...`);
+            await sleepCS(waitMs);
+            retries--;
+          } else {
+            // Out of retries/quota for this model → switch to NEXT model in the chain
+            currentModelIdx++;
+            retries = 2; // Reset retries for the next model
+            if (currentModelIdx < modelsToTry.length) {
+              setStatus("warning", `Hết quota model ${activeModel}`, `Tự động chuyển sang model dự phòng: ${modelsToTry[currentModelIdx]}`);
+              await sleepCS(1500); // brief pause before trying next model
+            }
+          }
         } else {
-          // Return error for all questions in this batch
-          return batch.map(q => ({ ...q, answer: null, error: err.message }));
+          // Non-quota error (e.g. invalid key, model not supported) → try next model immediately
+          currentModelIdx++;
+          retries = 2;
         }
       }
     }
-    return batch.map(q => ({ ...q, answer: null, error: "Vượt số lần thử lại" }));
+    // If all models failed
+    return batch.map(q => ({ ...q, answer: null, error: "Hết quota tất cả model khả dụng. Vui lòng kiểm tra lại tài khoản hoặc thử lại sau." }));
   }
 
   // Individual fallback — called when batch parse fails for a sub-group
@@ -860,12 +866,6 @@ ${qLines}`;
 
   // Main entry point — batch all questions, minimal API calls
   async function analyzeQuizDirect(questions, apiKey, modelName) {
-    const preferred = (modelName && !EXCLUDED_MODELS_CS.some(ex => modelName.startsWith(ex)))
-      ? modelName : "gemini-2.0-flash";
-
-    setStatus("loading", "Đang kết nối AI...", "Kiểm tra model...");
-    const model = await detectModel(apiKey, preferred);
-
     // Split into batches of BATCH_SIZE
     const batches = [];
     for (let i = 0; i < questions.length; i += BATCH_SIZE) {
@@ -874,16 +874,17 @@ ${qLines}`;
 
     const totalBatches = batches.length;
     const estSecs = totalBatches * 5 + (totalBatches - 1) * Math.ceil(BATCH_DELAY_MS / 1000);
-    setStatus("loading", `Phân tích ${questions.length} câu (${totalBatches} nhóm)...`, `Ước tính ~${estSecs}s · Model: ${model}`);
+    setStatus("loading", `Phân tích ${questions.length} câu (${totalBatches} nhóm)...`, `Ước tính ~${estSecs}s`);
 
     let allResults = [];
     for (let b = 0; b < batches.length; b++) {
       if (b > 0) await sleepCS(BATCH_DELAY_MS); // delay between batches
-      const batchResults = await processBatch(batches[b], apiKey, model, b, totalBatches);
+      const batchResults = await processBatch(batches[b], apiKey, modelName, b, totalBatches);
       allResults = allResults.concat(batchResults);
     }
     return allResults;
   }
+
 
 
   async function onScan() {
