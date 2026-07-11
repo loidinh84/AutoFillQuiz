@@ -411,6 +411,24 @@
 
 .aqz-result-exp { font-size: 10px !important; color: #475569 !important; margin-top: 4px !important; line-height: 1.5 !important; font-style: italic !important; }
 
+.aqz-answer-text-block {
+  font-size: 11px !important;
+  line-height: 1.6 !important;
+  color: #cbd5e1 !important;
+  background: rgba(255,255,255,0.04) !important;
+  border-left: 3px solid #22c55e !important;
+  padding: 6px 10px !important;
+  border-radius: 0 6px 6px 0 !important;
+  margin-top: 4px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.aqz-answer-text-block.fill {
+  border-left-color: #6366f1 !important;
+}
+
+
 /* ─── Empty state ─────────────────────────── */
 .aqz-empty {
   display: flex !important; flex-direction: column !important;

@@ -1795,9 +1795,22 @@ ${qLines}`;
       if (r.error) {
         ansHtml = `<span style="font-size:10px;color:#f87171;">⚠ ${esc(r.error)}</span>`;
       } else if (r.type === "fill_blank") {
-        ansHtml = `<span class="aqz-answer-chip fill">💡 ${esc(r.answer?.answer || r.answer || "—")}</span>${confChip(r.answer?.confidence)}`;
+        const rawAns = r.answer?.answer || (typeof r.answer === "string" ? r.answer : "—");
+        const isLong = rawAns.length > 25;
+        if (isLong) {
+          ansHtml = `<div class="aqz-answer-text-block fill">💡 <strong>Điền:</strong> ${esc(rawAns)}</div>`;
+        } else {
+          ansHtml = `<span class="aqz-answer-chip fill">💡 ${esc(rawAns)}</span>${confChip(r.answer?.confidence)}`;
+        }
       } else {
-        ansHtml = `<span class="aqz-answer-chip">${esc(r.answer?.answer || "?")}. ${esc(trunc(r.answer?.answerText || "", 28))}</span>${confChip(r.answer?.confidence)}`;
+        const rawAns = r.answer?.answer || "?";
+        const rawText = r.answer?.answerText || "";
+        const isLong = rawAns.length > 10;
+        if (isLong) {
+          ansHtml = `<div class="aqz-answer-text-block">💡 <strong>Đáp án:</strong> ${esc(rawAns)}</div>`;
+        } else {
+          ansHtml = `<span class="aqz-answer-chip">${esc(rawAns)}. ${esc(trunc(rawText, 28))}</span>${confChip(r.answer?.confidence)}`;
+        }
       }
       const expHtml =
         showExp && r.answer?.explanation
