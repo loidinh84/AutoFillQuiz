@@ -596,14 +596,15 @@
   }
 
   // ════════════════════════════════════════════
-  // ─── Gemini API — runs in tab context (no service worker timeout) ──
+  // ─── Gemini API — Batch mode (tab context, no service worker timeout) ──
   // ════════════════════════════════════════════
 
   const GEMINI_V1     = "https://generativelanguage.googleapis.com/v1/models";
   const GEMINI_V1BETA = "https://generativelanguage.googleapis.com/v1beta/models";
   const EXCLUDED_MODELS_CS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-preview"];
   const MODEL_CHAIN_CS = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.0-pro", "gemini-pro"];
-  const REQUEST_DELAY_MS = 4500; // ~13 RPM, safely under free-tier 15 RPM limit
+  const BATCH_SIZE = 25;        // questions per API call (safe for token limits)
+  const BATCH_DELAY_MS = 4500;  // delay between batches to respect 15 RPM
 
   function sleepCS(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -612,16 +613,39 @@
     return m ? Math.ceil(parseFloat(m[1]) * 1000) : 30000;
   }
 
-  function buildPromptCS({ type, questionText, options }) {
+  // Build a single batch prompt for multiple questions at once
+  function buildBatchPrompt(questions) {
+    const qLines = questions.map((q, i) => {
+      if (q.type === "fill_blank") {
+        return `[${i}] ĐIỀN CHỖ TRỐNG: "${q.questionText}"`;
+      }
+      const opts = (q.options || []).map((o, j) => `${String.fromCharCode(65 + j)}. ${o.text}`).join(" | ");
+      return `[${i}] TRẮC NGHIỆM: "${q.questionText}" | LỰA CHỌN: ${opts}`;
+    }).join("\n");
+
+    return `Bạn là trợ lý học tập thông minh. Trả lời tất cả câu hỏi dưới đây.
+Trả về một JSON array (không có markdown, không giải thích thêm), mỗi phần tử ứng với câu hỏi theo index:
+[
+  {"index":0,"answer":"A","answerIndex":0,"answerText":"nội dung đáp án","explanation":"lý do ngắn","confidence":"high"},
+  ...
+]
+Với câu điền chỗ trống: {"index":0,"answer":"từ cần điền","answerText":"từ cần điền","explanation":"lý do ngắn","confidence":"high"}
+
+CÁC CÂU HỎI:
+${qLines}`;
+  }
+
+  // Single-question prompt (fallback)
+  function buildSinglePrompt({ type, questionText, options }) {
     if (type === "fill_blank") {
       return `Bạn là trợ lý học tập. Điền vào chỗ trống phù hợp nhất.\nCÂU HỎI: "${questionText}"\nTrả về JSON: {"answer":"từ cần điền","explanation":"lý do ngắn","confidence":"high|medium|low"}`;
     }
     const list = (options || []).map((o, i) => `${String.fromCharCode(65 + i)}. ${o.text}`).join("\n");
-    return `Bạn là trợ lý học tập. Chọn đáp án đúng nhất cho câu trắc nghiệm sau.\nCÂU HỎI: "${questionText}"\nCÁC LỰA CHỌN:\n${list}\nTrả về JSON: {"answer":"chữ cái A/B/C...","answerIndex":số_0_based,"answerText":"nội dung đáp án","explanation":"lý do ngắn","confidence":"high|medium|low"}`;
+    return `Bạn là trợ lý học tập. Chọn đáp án đúng nhất.\nCÂU HỎI: "${questionText}"\nCÁC LỰA CHỌN:\n${list}\nTrả về JSON: {"answer":"chữ cái A/B/C...","answerIndex":số_0_based,"answerText":"nội dung đáp án","explanation":"lý do ngắn","confidence":"high|medium|low"}`;
   }
 
-  async function callGeminiCS(question, apiKey, model) {
-    const prompt = buildPromptCS(question);
+  // Core API call — tries v1 then v1beta (or vice versa for gemini-2.x)
+  async function geminiRequest(prompt, apiKey, model, maxTokens = 2048) {
     const endpoints = model.startsWith("gemini-2") ? [GEMINI_V1BETA, GEMINI_V1] : [GEMINI_V1, GEMINI_V1BETA];
     let lastErr = null;
     for (const base of endpoints) {
@@ -631,7 +655,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: 512 }
+            generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens }
           })
         });
         if (!res.ok) {
@@ -645,8 +669,7 @@
         const data = await res.json();
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!text) throw new Error("Không có phản hồi từ AI");
-        try { return JSON.parse(text); }
-        catch { return { answer: text.trim(), explanation: "", confidence: "medium" }; }
+        return text;
       } catch (err) {
         if (err.message.includes("not found") || err.message.includes("not supported") || err.message.includes("no longer available")) {
           lastErr = err; continue;
@@ -657,61 +680,119 @@
     throw lastErr || new Error("Không thể kết nối Gemini API");
   }
 
-  async function analyzeQuizDirect(questions, apiKey, modelName) {
-    // Pick safe starting model (skip deprecated 2.5)
-    const preferred = (modelName && !EXCLUDED_MODELS_CS.some(ex => modelName.startsWith(ex)))
-      ? modelName : "gemini-2.0-flash";
-    const toTry = [preferred, ...MODEL_CHAIN_CS.filter(m => m !== preferred)];
+  // Parse batch JSON response — extract array from text (handles markdown fences)
+  function parseBatchResponse(text, batchQuestions) {
+    // Strip markdown code fences if present
+    const clean = text.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+    // Find first '[' ... last ']'
+    const start = clean.indexOf("[");
+    const end = clean.lastIndexOf("]");
+    if (start === -1 || end === -1) return null;
+    try {
+      const arr = JSON.parse(clean.slice(start, end + 1));
+      if (!Array.isArray(arr) || arr.length === 0) return null;
+      // Map back by index
+      return batchQuestions.map((q, i) => {
+        const found = arr.find(a => a.index === i) || arr[i];
+        if (!found) return { ...q, answer: null, error: "AI không trả lời câu này" };
+        return { ...q, answer: { answer: found.answer, answerIndex: found.answerIndex ?? -1, answerText: found.answerText || "", explanation: found.explanation || "", confidence: found.confidence || "medium" } };
+      });
+    } catch {
+      return null;
+    }
+  }
 
-    // Detect working model with first question
-    let workingModel = preferred;
+  // Detect working model upfront (cheap test)
+  async function detectModel(apiKey, preferred) {
+    const toTry = [preferred, ...MODEL_CHAIN_CS.filter(m => m !== preferred)];
     for (const model of toTry) {
       try {
-        await callGeminiCS(questions[0], apiKey, model);
-        workingModel = model; break;
+        await geminiRequest("Test. Reply: OK", apiKey, model, 10);
+        return model;
       } catch (err) {
-        const isModelUnavail = err.message.includes("not found") || err.message.includes("not supported") || err.message.includes("no longer available");
-        if (!isModelUnavail) { workingModel = model; break; } // quota/rate limit — model exists
+        const isUnavail = err.message.includes("not found") || err.message.includes("not supported") || err.message.includes("no longer available");
+        if (!isUnavail) return model; // Rate limit / quota → model IS available
       }
     }
+    return preferred;
+  }
 
-    const results = [];
-    // First question was already called above, add it to results
-    try {
-      const firstAnswer = await callGeminiCS(questions[0], apiKey, workingModel);
-      results.push({ ...questions[0], answer: firstAnswer });
-    } catch (err) {
-      results.push({ ...questions[0], answer: null, error: err.message });
-    }
+  // Process a single batch — with retry on quota errors
+  async function processBatch(batch, apiKey, model, batchIndex, totalBatches) {
+    const batchLabel = totalBatches > 1 ? ` (nhóm ${batchIndex + 1}/${totalBatches})` : "";
+    setStatus("loading", `Đang phân tích${batchLabel}...`, `${batch.length} câu · Model: ${model}`);
 
-    for (let i = 1; i < questions.length; i++) {
-      const q = questions[i];
-      await sleepCS(REQUEST_DELAY_MS); // throttle between requests
-      setStatus("loading", `Phân tích câu ${i + 1}/${questions.length}...`, `Model: ${workingModel}`);
-
-      let retries = 2;
-      let done = false;
-      while (!done) {
-        try {
-          const answer = await callGeminiCS(q, apiKey, workingModel);
-          results.push({ ...q, answer });
-          done = true;
-        } catch (err) {
-          const isQuota = err.message.includes("quota") || err.message.includes("Quota") ||
-                          err.message.includes("RESOURCE_EXHAUSTED") || err.message.includes("429");
-          if (isQuota && retries > 0) {
-            const waitMs = Math.min(parseRetryMS(err.message), 60000);
-            setStatus("loading", `Rate limit — chờ ${Math.ceil(waitMs / 1000)}s`, `Sẽ retry câu ${i + 1}/${questions.length}`);
-            await sleepCS(waitMs);
-            retries--;
-          } else {
-            results.push({ ...q, answer: null, error: err.message });
-            done = true;
-          }
+    let retries = 3;
+    while (retries >= 0) {
+      try {
+        const prompt = buildBatchPrompt(batch);
+        const text = await geminiRequest(prompt, apiKey, model, Math.min(2048, batch.length * 80));
+        const parsed = parseBatchResponse(text, batch);
+        if (parsed) return parsed;
+        // Batch parse failed — fallback to individual
+        return await processIndividual(batch, apiKey, model, batchIndex, totalBatches);
+      } catch (err) {
+        const isQuota = err.message.includes("quota") || err.message.includes("Quota") ||
+                        err.message.includes("RESOURCE_EXHAUSTED") || err.message.includes("429");
+        if (isQuota && retries > 0) {
+          const waitMs = Math.min(parseRetryMS(err.message), 60000);
+          setStatus("loading", `Rate limit — chờ ${Math.ceil(waitMs / 1000)}s${batchLabel}`, "Sẽ tự động retry...");
+          await sleepCS(waitMs);
+          retries--;
+        } else {
+          // Return error for all questions in this batch
+          return batch.map(q => ({ ...q, answer: null, error: err.message }));
         }
       }
     }
+    return batch.map(q => ({ ...q, answer: null, error: "Vượt số lần thử lại" }));
+  }
+
+  // Individual fallback — called when batch parse fails for a sub-group
+  async function processIndividual(questions, apiKey, model, batchIdx, totalBatches) {
+    const results = [];
+    for (let i = 0; i < questions.length; i++) {
+      if (i > 0) await sleepCS(4000);
+      const q = questions[i];
+      try {
+        const prompt = buildSinglePrompt(q);
+        const text = await geminiRequest(prompt, apiKey, model, 256);
+        const clean = text.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+        const s = clean.indexOf("{"), e = clean.lastIndexOf("}");
+        const parsed = s !== -1 ? JSON.parse(clean.slice(s, e + 1)) : null;
+        results.push({ ...q, answer: parsed || { answer: clean.trim(), explanation: "", confidence: "medium" } });
+      } catch (err) {
+        results.push({ ...q, answer: null, error: err.message });
+      }
+    }
     return results;
+  }
+
+  // Main entry point — batch all questions, minimal API calls
+  async function analyzeQuizDirect(questions, apiKey, modelName) {
+    const preferred = (modelName && !EXCLUDED_MODELS_CS.some(ex => modelName.startsWith(ex)))
+      ? modelName : "gemini-2.0-flash";
+
+    setStatus("loading", "Đang kết nối AI...", "Kiểm tra model...");
+    const model = await detectModel(apiKey, preferred);
+
+    // Split into batches of BATCH_SIZE
+    const batches = [];
+    for (let i = 0; i < questions.length; i += BATCH_SIZE) {
+      batches.push(questions.slice(i, i + BATCH_SIZE));
+    }
+
+    const totalBatches = batches.length;
+    const estSecs = totalBatches * 5 + (totalBatches - 1) * Math.ceil(BATCH_DELAY_MS / 1000);
+    setStatus("loading", `Phân tích ${questions.length} câu (${totalBatches} nhóm)...`, `Ước tính ~${estSecs}s · Model: ${model}`);
+
+    let allResults = [];
+    for (let b = 0; b < batches.length; b++) {
+      if (b > 0) await sleepCS(BATCH_DELAY_MS); // delay between batches
+      const batchResults = await processBatch(batches[b], apiKey, model, b, totalBatches);
+      allResults = allResults.concat(batchResults);
+    }
+    return allResults;
   }
 
 
