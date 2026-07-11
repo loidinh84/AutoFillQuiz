@@ -195,14 +195,15 @@
           <div class="aqz-tab-panel" id="aqz-panel-settings">
 
             <div class="aqz-settings-section">
-              <label>Gemini API Key</label>
+              <label>Gemini API Key(s)</label>
               <div class="aqz-input-wrap">
                 <svg class="prefix" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                <input type="password" id="aqz-api-key" placeholder="AIzaSy..." autocomplete="off" spellcheck="false" />
+                <input type="password" id="aqz-api-key" placeholder="Key1, Key2, Key3 (Phân cách bằng dấu phẩy)" autocomplete="off" spellcheck="false" />
                 <button class="aqz-eye-btn" id="aqz-eye-btn" title="Hiện/ẩn">
                   <svg id="aqz-eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                 </button>
               </div>
+              <small style="color:#64748b;font-size:10px;margin-top:2px;display:block">Có thể nhập nhiều key để tự động đổi khi hết quota</small>
             </div>
 
             <div class="aqz-settings-section">
@@ -334,61 +335,66 @@
       .querySelector("#aqz-eye-btn")
       .addEventListener("click", onToggleKeyVisibility);
 
-    // Test API Key
+    // Test multiple API keys
     host.querySelector("#aqz-btn-test-key").addEventListener("click", async () => {
-      const key = document.getElementById("aqz-api-key")?.value.trim() || settings.geminiApiKey;
+      const keyInput = document.getElementById("aqz-api-key")?.value.trim() || settings.geminiApiKey;
       const resultEl = document.getElementById("aqz-key-test-result");
       const btn = host.querySelector("#aqz-btn-test-key");
-      if (!key) {
+      if (!keyInput) {
         resultEl.style.display = "block";
         resultEl.style.borderColor = "rgba(239,68,68,0.4)";
         resultEl.innerHTML = "❌ Chưa nhập API Key!";
         return;
       }
+
+      const keys = keyInput.split(/[\s,;\n]+/).map(k => k.trim()).filter(Boolean);
       btn.textContent = "⏳ Đang kiểm tra...";
       btn.disabled = true;
       resultEl.style.display = "none";
 
       try {
-        const response = await chrome.runtime.sendMessage({ type: "LIST_MODELS", payload: { apiKey: key } });
         resultEl.style.display = "block";
-        if (response?.models?.length) {
-          const modelList = response.models.slice(0, 10).join("\n");
-          resultEl.style.borderColor = "rgba(34,197,94,0.4)";
-          resultEl.innerHTML = `✅ <strong>API Key hợp lệ!</strong><br>Model khả dụng (${response.models.length}):<br><code style="font-size:10px;white-space:pre;display:block;margin-top:4px;">${response.models.slice(0, 8).join('\n')}</code>`;
-          // Auto-select best safe model if current not in list
-          const selEl = document.getElementById("aqz-model-select");
-          const cur = selEl?.value;
-          if (selEl && !response.models.includes(cur)) {
-            // Priority order: prefer stable models, avoid 2.5 (not available to new users)
-            const PREFERRED = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.0-pro"];
-            const best = PREFERRED.find(p => response.models.includes(p)) || 
-                         response.models.find(m => m.includes("flash") && !m.includes("2.5")) ||
-                         response.models[0];
-            if (best) {
-              // Add option if not already in dropdown
-              if (!selEl.querySelector(`option[value="${best}"]`)) {
-                const opt = document.createElement("option");
-                opt.value = best;
-                opt.textContent = best + " (tự động phát hiện)";
-                selEl.insertBefore(opt, selEl.firstChild);
-              }
-              selEl.value = best;
-            }
-          }
+        resultEl.style.borderColor = "rgba(99,102,241,0.4)";
+        resultEl.innerHTML = `⏳ Đang kiểm tra ${keys.length} API key...`;
 
+        let summaryHtml = `<strong>Kết quả kiểm tra (${keys.length} keys):</strong><br>`;
+        let firstValidKey = null;
+        let validCount = 0;
+
+        for (let i = 0; i < keys.length; i++) {
+          const activeKey = keys[i];
+          const obscured = activeKey.length > 10 
+            ? activeKey.substring(0, 6) + "..." + activeKey.substring(activeKey.length - 4)
+            : "Key_" + (i + 1);
+          try {
+            const response = await chrome.runtime.sendMessage({ type: "LIST_MODELS", payload: { apiKey: activeKey } });
+            if (response?.models?.length) {
+              summaryHtml += `<span style="color:#22c55e">✅ Key [${i+1}] (${obscured}): Hợp lệ (${response.models.length} models)</span><br>`;
+              validCount++;
+              if (!firstValidKey) firstValidKey = activeKey;
+            } else {
+              summaryHtml += `<span style="color:#ef4444">❌ Key [${i+1}] (${obscured}): Không khả dụng</span><br>`;
+            }
+          } catch (e) {
+            summaryHtml += `<span style="color:#ef4444">❌ Key [${i+1}] (${obscured}): Lỗi: ${e.message}</span><br>`;
+          }
+        }
+
+        resultEl.innerHTML = summaryHtml;
+
+        if (validCount > 0) {
+          resultEl.style.borderColor = "rgba(34,197,94,0.4)";
+          if (firstValidKey) loadModelsIntoSelect(firstValidKey);
         } else {
           resultEl.style.borderColor = "rgba(239,68,68,0.4)";
-          resultEl.innerHTML = "❌ <strong>API Key không hợp lệ</strong> hoặc chưa kích hoạt Gemini API.<br><small>Vào <a href='https://aistudio.google.com/app/apikey' target='_blank' style='color:#a5b4fc'>aistudio.google.com</a> để lấy key mới.</small>";
         }
       } catch (err) {
         resultEl.style.display = "block";
         resultEl.style.borderColor = "rgba(239,68,68,0.4)";
-        resultEl.innerHTML = `❌ Lỗi: ${err.message}`;
+        resultEl.innerHTML = `❌ Lỗi hệ thống: ${err.message}`;
       } finally {
         btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg> Kiểm tra API Key`;
         btn.disabled = false;
-      }
     });
 
     // Refresh model list button
@@ -423,12 +429,18 @@
   } // ← end setupPanelEvents
 
   // ─── Dynamic model loader ───────────────────
-  async function loadModelsIntoSelect(apiKey) {
+  async function loadModelsIntoSelect(apiKeyInput) {
     const selEl = document.getElementById("aqz-model-select");
     const statusEl = document.getElementById("aqz-model-status");
     const refreshBtn = document.getElementById("aqz-btn-refresh-models");
     const icon = document.getElementById("aqz-refresh-icon");
-    if (!selEl || !apiKey) return;
+    if (!selEl || !apiKeyInput) return;
+
+    // Use the first valid key in the list for model loading
+    const keys = apiKeyInput.split(/[\s,;\n]+/).map(k => k.trim()).filter(Boolean);
+    const apiKey = keys[0];
+    if (!apiKey) return;
+
 
     // Spinner animation
     if (icon) icon.style.animation = "aqzSpin 0.8s linear infinite";
@@ -793,55 +805,72 @@ ${qLines}`;
   }
 
   // Process a single batch — with fallback to alternative models if the primary model is out of quota
-  async function processBatch(batch, apiKey, modelName, batchIndex, totalBatches) {
+  // Also supports rotating across multiple API keys when quota limit is hit
+  async function processBatch(batch, apiKeys, modelName, batchIndex, totalBatches) {
     const batchLabel = totalBatches > 1 ? ` (nhóm ${batchIndex + 1}/${totalBatches})` : "";
     const preferred = (modelName && !EXCLUDED_MODELS_CS.some(ex => modelName.startsWith(ex)))
       ? modelName : "gemini-2.0-flash";
     const modelsToTry = [preferred, ...MODEL_CHAIN_CS.filter(m => m !== preferred)];
 
     let currentModelIdx = 0;
-    let retries = 2;
+    let currentKeyIdx = 0;
+    let retries = 1; // 1 retry per key/model pair
 
     while (currentModelIdx < modelsToTry.length) {
       const activeModel = modelsToTry[currentModelIdx];
-      setStatus("loading", `Đang phân tích${batchLabel}...`, `${batch.length} câu · Model: ${activeModel}`);
+      const activeKey = apiKeys[currentKeyIdx];
+      const obscuredKey = activeKey.substring(0, 6) + "..." + activeKey.substring(activeKey.length - 4);
+
+      setStatus("loading", `Đang phân tích${batchLabel}...`, `${batch.length} câu · Model: ${activeModel} · Key: ${obscuredKey}`);
       try {
         const prompt = buildBatchPrompt(batch);
-        const text = await geminiRequest(prompt, apiKey, activeModel, Math.min(2048, batch.length * 80));
+        const text = await geminiRequest(prompt, activeKey, activeModel, Math.min(2048, batch.length * 80));
         const parsed = parseBatchResponse(text, batch);
         if (parsed) return parsed;
         // Batch parse failed — fallback to individual
-        return await processIndividual(batch, apiKey, activeModel, batchIndex, totalBatches);
+        return await processIndividual(batch, activeKey, activeModel, batchIndex, totalBatches);
       } catch (err) {
         const isQuota = err.message.includes("quota") || err.message.includes("Quota") ||
                         err.message.includes("RESOURCE_EXHAUSTED") || err.message.includes("429") ||
                         err.message.includes("limit");
         
         if (isQuota) {
-          // If we have retries left for the CURRENT model, wait and retry
-          if (retries > 0) {
-            const waitMs = Math.min(parseRetryMS(err.message), 15000); // Wait up to 15s max for rate-limits
+          // If there are other API keys available, rotate key first!
+          if (currentKeyIdx + 1 < apiKeys.length) {
+            currentKeyIdx++;
+            setStatus("warning", `Key ${obscuredKey} hết quota`, `Tự động chuyển sang Key dự phòng ${currentKeyIdx + 1}...`);
+            await sleepCS(1500); // brief pause
+            retries = 1; // reset retry for new key
+          } else if (retries > 0) {
+            // No other keys, but we have retries left for current key/model
+            const waitMs = Math.min(parseRetryMS(err.message), 15000);
             setStatus("loading", `Rate limit — chờ ${Math.ceil(waitMs / 1000)}s${batchLabel}`, `Sắp thử lại với ${activeModel}...`);
             await sleepCS(waitMs);
             retries--;
           } else {
-            // Out of retries/quota for this model → switch to NEXT model in the chain
+            // Out of keys and retries for this model → switch to NEXT model, reset keys to first one
             currentModelIdx++;
-            retries = 2; // Reset retries for the next model
+            currentKeyIdx = 0;
+            retries = 1;
             if (currentModelIdx < modelsToTry.length) {
               setStatus("warning", `Hết quota model ${activeModel}`, `Tự động chuyển sang model dự phòng: ${modelsToTry[currentModelIdx]}`);
-              await sleepCS(1500); // brief pause before trying next model
+              await sleepCS(1500);
             }
           }
         } else {
-          // Non-quota error (e.g. invalid key, model not supported) → try next model immediately
-          currentModelIdx++;
-          retries = 2;
+          // Non-quota error (e.g. invalid key, model not supported) → try next model/key
+          if (currentKeyIdx + 1 < apiKeys.length) {
+            currentKeyIdx++;
+          } else {
+            currentModelIdx++;
+            currentKeyIdx = 0;
+          }
+          retries = 1;
         }
       }
     }
-    // If all models failed
-    return batch.map(q => ({ ...q, answer: null, error: "Hết quota tất cả model khả dụng. Vui lòng kiểm tra lại tài khoản hoặc thử lại sau." }));
+    // If all models and all keys failed
+    return batch.map(q => ({ ...q, answer: null, error: "Hết quota trên toàn bộ API Key và model dự phòng. Hãy thêm key mới hoặc thử lại sau." }));
   }
 
   // Individual fallback — called when batch parse fails for a sub-group
@@ -865,7 +894,11 @@ ${qLines}`;
   }
 
   // Main entry point — batch all questions, minimal API calls
-  async function analyzeQuizDirect(questions, apiKey, modelName) {
+  async function analyzeQuizDirect(questions, apiKeyInput, modelName) {
+    // Split key input into individual keys
+    const apiKeys = apiKeyInput.split(/[\s,;\n]+/).map(k => k.trim()).filter(Boolean);
+    if (!apiKeys.length) throw new Error("Chưa nhập API key hợp lệ.");
+
     // Split into batches of BATCH_SIZE
     const batches = [];
     for (let i = 0; i < questions.length; i += BATCH_SIZE) {
@@ -874,16 +907,17 @@ ${qLines}`;
 
     const totalBatches = batches.length;
     const estSecs = totalBatches * 5 + (totalBatches - 1) * Math.ceil(BATCH_DELAY_MS / 1000);
-    setStatus("loading", `Phân tích ${questions.length} câu (${totalBatches} nhóm)...`, `Ước tính ~${estSecs}s`);
+    setStatus("loading", `Phân tích ${questions.length} câu (${totalBatches} nhóm)...`, `Sử dụng ${apiKeys.length} API Key.`);
 
     let allResults = [];
     for (let b = 0; b < batches.length; b++) {
       if (b > 0) await sleepCS(BATCH_DELAY_MS); // delay between batches
-      const batchResults = await processBatch(batches[b], apiKey, modelName, b, totalBatches);
+      const batchResults = await processBatch(batches[b], apiKeys, modelName, b, totalBatches);
       allResults = allResults.concat(batchResults);
     }
     return allResults;
   }
+
 
 
 
