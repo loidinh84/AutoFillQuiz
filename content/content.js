@@ -207,14 +207,18 @@
 
             <div class="aqz-settings-section">
               <label>AI Model</label>
-              <div class="aqz-input-wrap">
+              <div class="aqz-input-wrap" style="position:relative">
                 <svg class="prefix" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 0v20M2 12h20"/></svg>
                 <select id="aqz-model-select">
-                  <option value="gemini-1.5-flash" selected>Gemini 1.5 Flash (Khuyên dùng, ổn định)</option>
-                  <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                  <option value="gemini-1.5-pro">Gemini 1.5 Pro (Chính xác hơn)</option>
+                  <option value="gemini-2.0-flash" selected>Gemini 2.0 Flash (mặc định)</option>
+                  <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                  <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
                 </select>
+                <button id="aqz-btn-refresh-models" title="Tải danh sách model từ API" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:4px;color:#a5b4fc;display:flex;align-items:center;">
+                  <svg id="aqz-refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+                </button>
               </div>
+              <small id="aqz-model-status" style="color:#64748b;font-size:10px;margin-top:2px;display:block">Nhập API key rồi bấm 🔄 để tải model khả dụng</small>
             </div>
 
             <div class="aqz-settings-section">
@@ -253,6 +257,8 @@
     makeResizable(host, host.querySelector("#aqz-panel-resize-handle"));
     restorePanelPosition(host);
     syncSettingsToUI();
+    // Auto-load real model list from API if key already saved
+    if (settings.geminiApiKey) loadModelsIntoSelect(settings.geminiApiKey);
   }
 
   function togglePanel() {
@@ -385,7 +391,22 @@
       }
     });
 
-    // External links
+    // Refresh model list button
+    host.querySelector("#aqz-btn-refresh-models").addEventListener("click", () => {
+      const key = document.getElementById("aqz-api-key")?.value.trim() || settings.geminiApiKey;
+      loadModelsIntoSelect(key);
+    });
+
+    // Auto-load models when settings tab is opened (if key is available)
+    host.querySelectorAll(".aqz-tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (btn.dataset.tab === "settings") {
+          const key = document.getElementById("aqz-api-key")?.value.trim() || settings.geminiApiKey;
+          if (key) loadModelsIntoSelect(key);
+        }
+      });
+    });
+
     host.querySelectorAll("a[target='_blank']").forEach((a) => {
       a.addEventListener("click", (e) => {
         e.preventDefault();
@@ -400,6 +421,75 @@
     // Drag
     makeDraggable(host, host.querySelector("#aqz-panel-header"));
   } // ← end setupPanelEvents
+
+  // ─── Dynamic model loader ───────────────────
+  async function loadModelsIntoSelect(apiKey) {
+    const selEl = document.getElementById("aqz-model-select");
+    const statusEl = document.getElementById("aqz-model-status");
+    const refreshBtn = document.getElementById("aqz-btn-refresh-models");
+    const icon = document.getElementById("aqz-refresh-icon");
+    if (!selEl || !apiKey) return;
+
+    // Spinner animation
+    if (icon) icon.style.animation = "aqzSpin 0.8s linear infinite";
+    if (refreshBtn) refreshBtn.disabled = true;
+    if (statusEl) statusEl.textContent = "⏳ Đang tải danh sách model...";
+
+    const EXCLUDED = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-preview"];
+    const PREFERRED_ORDER = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro", "gemini-1.0-pro", "gemini-pro"];
+
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}&pageSize=100`,
+        { method: "GET" }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      const models = (data.models || [])
+        .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
+        .map(m => ({ id: m.name.replace("models/", ""), display: m.displayName || m.name.replace("models/", "") }))
+        .filter(m => !EXCLUDED.some(ex => m.id.startsWith(ex)));
+
+      if (!models.length) throw new Error("Không tìm thấy model nào");
+
+      // Sort: preferred models first, then alphabetically
+      models.sort((a, b) => {
+        const ai = PREFERRED_ORDER.indexOf(a.id);
+        const bi = PREFERRED_ORDER.indexOf(b.id);
+        if (ai !== -1 && bi !== -1) return ai - bi;
+        if (ai !== -1) return -1;
+        if (bi !== -1) return 1;
+        return a.id.localeCompare(b.id);
+      });
+
+      const currentVal = selEl.value;
+      selEl.innerHTML = "";
+      models.forEach(m => {
+        const opt = document.createElement("option");
+        opt.value = m.id;
+        const isPreferred = PREFERRED_ORDER.slice(0, 3).includes(m.id);
+        opt.textContent = m.display + (isPreferred ? " ★" : "");
+        selEl.appendChild(opt);
+      });
+
+      // Restore previous selection or pick best available
+      if (models.some(m => m.id === currentVal)) {
+        selEl.value = currentVal;
+      } else {
+        const best = PREFERRED_ORDER.find(p => models.some(m => m.id === p)) || models[0].id;
+        selEl.value = best;
+      }
+
+      if (statusEl) statusEl.textContent = `✅ Đã tải ${models.length} model từ API`;
+      if (statusEl) statusEl.style.color = "#22c55e";
+    } catch (err) {
+      if (statusEl) { statusEl.textContent = `⚠️ Không tải được model: ${err.message}`; statusEl.style.color = "#ef4444"; }
+    } finally {
+      if (icon) icon.style.animation = "";
+      if (refreshBtn) refreshBtn.disabled = false;
+    }
+  }
 
   // ─── Drag logic (Bulletproof left/top) ──────
   function makeDraggable(panel, handle) {
