@@ -131,27 +131,50 @@ async function handleAnalyzeQuiz({ questions, apiKey, modelName }) {
 
 async function callGemini(question, apiKey, model) {
   const prompt = buildPrompt(question);
-  const base = getGeminiBase(model);
-  const res = await fetch(`${base}/${model}:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 512 }
-    })
-  });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `HTTP ${res.status}`);
+  // Try primary endpoint first, then fallback
+  const endpoints = model.startsWith("gemini-2")
+    ? [GEMINI_BASE_V1BETA, GEMINI_BASE_V1]
+    : [GEMINI_BASE_V1, GEMINI_BASE_V1BETA];
+
+  let lastErr = null;
+  for (const base of endpoints) {
+    try {
+      const res = await fetch(`${base}/${model}:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 512 }
+        })
+      });
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        const msg = errBody?.error?.message || `HTTP ${res.status}`;
+        // If model not found on this endpoint version, try next
+        if (msg.includes("not found") || msg.includes("not supported") || res.status === 404) {
+          lastErr = new Error(msg);
+          continue;
+        }
+        throw new Error(msg);
+      }
+
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) throw new Error("Không có phản hồi từ AI");
+
+      try { return JSON.parse(text); }
+      catch { return { answer: text.trim(), explanation: "", confidence: "medium" }; }
+    } catch (err) {
+      if (err.message.includes("not found") || err.message.includes("not supported")) {
+        lastErr = err;
+        continue;
+      }
+      throw err;
+    }
   }
-
-  const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Không có phản hồi từ AI");
-
-  try { return JSON.parse(text); }
-  catch { return { answer: text.trim(), explanation: "", confidence: "medium" }; }
+  throw lastErr || new Error("Không thể kết nối đến Gemini API");
 }
 
 function buildPrompt({ type, questionText, options }) {

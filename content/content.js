@@ -12,20 +12,20 @@
   }
   window.__aqzLoaded = true;
 
-  const isMainFrame = (window === window.top);
+  const isMainFrame = window === window.top;
 
   // ─── State ──────────────────────────────
-  let panelVisible    = false;
-  let panelMinimized  = false;
+  let panelVisible = false;
+  let panelMinimized = false;
   let extractedQuestions = [];
-  let analysisResults    = [];
-  let isAnalyzing        = false;
+  let analysisResults = [];
+  let isAnalyzing = false;
   let settings = {
     geminiApiKey: "",
     modelName: "gemini-1.5-flash",
     autoHighlight: true,
     showExplanation: true,
-    vietnamese: true
+    vietnamese: true,
   };
 
   // ─── Init ────────────────────────────────
@@ -48,10 +48,10 @@
       case "AQZ_FRAME_EXTRACT":
         extractedQuestions = extractQuestions();
         // Return serializable question data (without DOM element references)
-        const serializableQuestions = extractedQuestions.map(q => ({
+        const serializableQuestions = extractedQuestions.map((q) => ({
           type: q.type,
           questionText: q.questionText,
-          options: (q.options || []).map(o => ({ text: o.text }))
+          options: (q.options || []).map((o) => ({ text: o.text })),
         }));
         sendResponse({ success: true, questions: serializableQuestions });
         break;
@@ -251,7 +251,9 @@
 
   function togglePanel() {
     const host = document.getElementById("aqz-panel-host");
-    if (!host) { buildPanel(); }
+    if (!host) {
+      buildPanel();
+    }
     panelVisible = !panelVisible;
     const h = document.getElementById("aqz-panel-host");
     if (panelVisible) {
@@ -269,12 +271,18 @@
   // ─── Panel event wiring ───────────────────
   function setupPanelEvents(host) {
     // Tabs
-    host.querySelectorAll(".aqz-tab").forEach(btn => {
+    host.querySelectorAll(".aqz-tab").forEach((btn) => {
       btn.addEventListener("click", () => {
-        host.querySelectorAll(".aqz-tab").forEach(b => b.classList.remove("active"));
-        host.querySelectorAll(".aqz-tab-panel").forEach(p => p.classList.remove("active"));
+        host
+          .querySelectorAll(".aqz-tab")
+          .forEach((b) => b.classList.remove("active"));
+        host
+          .querySelectorAll(".aqz-tab-panel")
+          .forEach((p) => p.classList.remove("active"));
         btn.classList.add("active");
-        host.querySelector(`#aqz-panel-${btn.dataset.tab}`).classList.add("active");
+        host
+          .querySelector(`#aqz-panel-${btn.dataset.tab}`)
+          .classList.add("active");
       });
     });
 
@@ -291,28 +299,38 @@
 
     host.querySelector("#aqz-btn-refresh").addEventListener("click", () => {
       clearResultsUI();
-      setStatus("idle", "Sẵn sàng phân tích", "Nhấn \"Quét trang\" để bắt đầu");
+      setStatus("idle", "Sẵn sàng phân tích", 'Nhấn "Quét trang" để bắt đầu');
       host.querySelector("#aqz-btn-autofill").disabled = true;
       host.querySelector("#aqz-btn-highlight").disabled = true;
     });
 
     // Main buttons
     host.querySelector("#aqz-btn-scan").addEventListener("click", onScan);
-    host.querySelector("#aqz-btn-autofill").addEventListener("click", onAutoFill);
-    host.querySelector("#aqz-btn-highlight").addEventListener("click", onHighlightOnly);
+    host
+      .querySelector("#aqz-btn-autofill")
+      .addEventListener("click", onAutoFill);
+    host
+      .querySelector("#aqz-btn-highlight")
+      .addEventListener("click", onHighlightOnly);
     host.querySelector("#aqz-btn-clear").addEventListener("click", onClear);
 
     // Settings
-    host.querySelector("#aqz-btn-save").addEventListener("click", onSaveSettings);
-    host.querySelector("#aqz-eye-btn").addEventListener("click", onToggleKeyVisibility);
+    host
+      .querySelector("#aqz-btn-save")
+      .addEventListener("click", onSaveSettings);
+    host
+      .querySelector("#aqz-eye-btn")
+      .addEventListener("click", onToggleKeyVisibility);
 
     // External links
-    host.querySelectorAll("a[target='_blank']").forEach(a => {
-      a.addEventListener("click", e => {
+    host.querySelectorAll("a[target='_blank']").forEach((a) => {
+      a.addEventListener("click", (e) => {
         e.preventDefault();
-        chrome.runtime.sendMessage({ type: "OPEN_URL", url: a.href }).catch(() => {
-          window.open(a.href, "_blank");
-        });
+        chrome.runtime
+          .sendMessage({ type: "OPEN_URL", url: a.href })
+          .catch(() => {
+            window.open(a.href, "_blank");
+          });
       });
     });
 
@@ -323,140 +341,177 @@
   // ─── Drag logic (Bulletproof left/top) ──────
   function makeDraggable(panel, handle) {
     let isDragging = false;
-    let startX = 0, startY = 0;
-    let startLeft = 0, startTop = 0;
+    let startX = 0,
+      startY = 0;
+    let startLeft = 0,
+      startTop = 0;
 
-    handle.style.setProperty('touch-action', 'none', 'important');
+    handle.style.setProperty("touch-action", "none", "important");
 
-    handle.addEventListener("pointerdown", e => {
-      if (e.target.closest("button, a, input, select, textarea")) return;
-      e.preventDefault();
+    handle.addEventListener(
+      "pointerdown",
+      (e) => {
+        if (e.target.closest("button, a, input, select, textarea")) return;
+        e.preventDefault();
 
-      isDragging = true;
-      startX = e.clientX;
-      startY = e.clientY;
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
 
-      const rect = panel.getBoundingClientRect();
-      startLeft = rect.left;
-      startTop  = rect.top;
+        const rect = panel.getBoundingClientRect();
+        startLeft = rect.left;
+        startTop = rect.top;
 
-      // Instantly switch from CSS right/top to absolute left/top inline styles
-      panel.style.setProperty('left',   startLeft + 'px', 'important');
-      panel.style.setProperty('top',    startTop  + 'px', 'important');
-      panel.style.setProperty('right',  'auto',           'important');
-      panel.style.setProperty('bottom', 'auto',           'important');
+        // Instantly switch from CSS right/top to absolute left/top inline styles
+        panel.style.setProperty("left", startLeft + "px", "important");
+        panel.style.setProperty("top", startTop + "px", "important");
+        panel.style.setProperty("right", "auto", "important");
+        panel.style.setProperty("bottom", "auto", "important");
 
-      panel.style.transition = 'none';
-      panel.style.animation  = 'none';
-      handle.style.cursor    = 'grabbing';
-    }, true); // ← Use capture phase to intercept
+        panel.style.transition = "none";
+        panel.style.animation = "none";
+        handle.style.cursor = "grabbing";
+      },
+      true,
+    ); // ← Use capture phase to intercept
 
-    window.addEventListener("pointermove", e => {
-      if (!isDragging) return;
-      e.preventDefault();
+    window.addEventListener(
+      "pointermove",
+      (e) => {
+        if (!isDragging) return;
+        e.preventDefault();
 
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
 
-      let newLeft = startLeft + dx;
-      let newTop  = startTop  + dy;
+        let newLeft = startLeft + dx;
+        let newTop = startTop + dy;
 
-      // Clamp within viewport
-      newLeft = Math.max(0, Math.min(window.innerWidth  - panel.offsetWidth, newLeft));
-      newTop  = Math.max(0, Math.min(window.innerHeight - 44, newTop));
+        // Clamp within viewport
+        newLeft = Math.max(
+          0,
+          Math.min(window.innerWidth - panel.offsetWidth, newLeft),
+        );
+        newTop = Math.max(0, Math.min(window.innerHeight - 44, newTop));
 
-      panel.style.setProperty('left',   newLeft + 'px', 'important');
-      panel.style.setProperty('top',    newTop  + 'px', 'important');
-    }, { capture: true, passive: false });
+        panel.style.setProperty("left", newLeft + "px", "important");
+        panel.style.setProperty("top", newTop + "px", "important");
+      },
+      { capture: true, passive: false },
+    );
 
-    window.addEventListener("pointerup", () => {
-      if (!isDragging) return;
-      isDragging = false;
-      handle.style.cursor = '';
-      panel.style.transition = '';
+    window.addEventListener(
+      "pointerup",
+      () => {
+        if (!isDragging) return;
+        isDragging = false;
+        handle.style.cursor = "";
+        panel.style.transition = "";
 
-      const left = panel.style.getPropertyValue('left');
-      const top  = panel.style.getPropertyValue('top');
+        const left = panel.style.getPropertyValue("left");
+        const top = panel.style.getPropertyValue("top");
 
-      if (left && top) {
-        chrome.storage.local.set({
-          aqzPanelLeft: left,
-          aqzPanelTop:  top
-        });
-      }
-    }, { capture: true });
+        if (left && top) {
+          chrome.storage.local.set({
+            aqzPanelLeft: left,
+            aqzPanelTop: top,
+          });
+        }
+      },
+      { capture: true },
+    );
   }
 
   function restorePanelPosition(panel) {
     chrome.storage.local.get(
       ["aqzPanelLeft", "aqzPanelTop", "aqzPanelWidth", "aqzPanelHeight"],
-      result => {
+      (result) => {
         if (result.aqzPanelLeft && result.aqzPanelTop) {
-          panel.style.setProperty('left',   result.aqzPanelLeft, 'important');
-          panel.style.setProperty('top',    result.aqzPanelTop,  'important');
-          panel.style.setProperty('right',  'auto',              'important');
-          panel.style.setProperty('bottom', 'auto',              'important');
+          panel.style.setProperty("left", result.aqzPanelLeft, "important");
+          panel.style.setProperty("top", result.aqzPanelTop, "important");
+          panel.style.setProperty("right", "auto", "important");
+          panel.style.setProperty("bottom", "auto", "important");
         }
         if (result.aqzPanelWidth && result.aqzPanelHeight) {
-          panel.style.setProperty('width',  result.aqzPanelWidth,  'important');
-          panel.style.setProperty('height', result.aqzPanelHeight, 'important');
+          panel.style.setProperty("width", result.aqzPanelWidth, "important");
+          panel.style.setProperty("height", result.aqzPanelHeight, "important");
         }
-      }
+      },
     );
   }
 
   // ─── Resize logic (Pointer Capture) ────────
   function makeResizable(panel, handle) {
     let isResizing = false;
-    let startWidth = 0, startHeight = 0;
-    let startX = 0, startY = 0;
+    let startWidth = 0,
+      startHeight = 0;
+    let startX = 0,
+      startY = 0;
 
-    handle.addEventListener("pointerdown", e => {
-      e.preventDefault();
-      e.stopPropagation();
-      isResizing = true;
-      startX = e.clientX;
-      startY = e.clientY;
+    handle.addEventListener(
+      "pointerdown",
+      (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        isResizing = true;
+        startX = e.clientX;
+        startY = e.clientY;
 
-      const rect = panel.getBoundingClientRect();
-      startWidth  = rect.width;
-      startHeight = rect.height;
+        const rect = panel.getBoundingClientRect();
+        startWidth = rect.width;
+        startHeight = rect.height;
 
-      panel.style.transition = 'none';
-      document.body.style.userSelect = 'none';
-    }, true);
+        panel.style.transition = "none";
+        document.body.style.userSelect = "none";
+      },
+      true,
+    );
 
-    window.addEventListener("pointermove", e => {
-      if (!isResizing) return;
-      e.preventDefault();
+    window.addEventListener(
+      "pointermove",
+      (e) => {
+        if (!isResizing) return;
+        e.preventDefault();
 
-      const dw = e.clientX - startX;
-      const dh = e.clientY - startY;
+        const dw = e.clientX - startX;
+        const dh = e.clientY - startY;
 
-      // Restrict size bounds: Min width/height, max width/height
-      const newWidth  = Math.max(300, Math.min(window.innerWidth * 0.9, startWidth + dw));
-      const newHeight = Math.max(250, Math.min(window.innerHeight * 0.95, startHeight + dh));
+        // Restrict size bounds: Min width/height, max width/height
+        const newWidth = Math.max(
+          300,
+          Math.min(window.innerWidth * 0.9, startWidth + dw),
+        );
+        const newHeight = Math.max(
+          250,
+          Math.min(window.innerHeight * 0.95, startHeight + dh),
+        );
 
-      panel.style.setProperty('width',  newWidth + 'px',  'important');
-      panel.style.setProperty('height', newHeight + 'px', 'important');
-    }, { capture: true, passive: false });
+        panel.style.setProperty("width", newWidth + "px", "important");
+        panel.style.setProperty("height", newHeight + "px", "important");
+      },
+      { capture: true, passive: false },
+    );
 
-    window.addEventListener("pointerup", () => {
-      if (!isResizing) return;
-      isResizing = false;
-      document.body.style.userSelect = '';
-      panel.style.transition = '';
+    window.addEventListener(
+      "pointerup",
+      () => {
+        if (!isResizing) return;
+        isResizing = false;
+        document.body.style.userSelect = "";
+        panel.style.transition = "";
 
-      const w = panel.style.getPropertyValue('width');
-      const h = panel.style.getPropertyValue('height');
+        const w = panel.style.getPropertyValue("width");
+        const h = panel.style.getPropertyValue("height");
 
-      if (w && h) {
-        chrome.storage.local.set({
-          aqzPanelWidth: w,
-          aqzPanelHeight: h
-        });
-      }
-    }, { capture: true });
+        if (w && h) {
+          chrome.storage.local.set({
+            aqzPanelWidth: w,
+            aqzPanelHeight: h,
+          });
+        }
+      },
+      { capture: true },
+    );
   }
 
   // ════════════════════════════════════════════
@@ -466,20 +521,22 @@
   // ─── Frame Dispatcher ────────────────────
   function dispatchToFrames(targetType, results) {
     const resultsByFrame = {};
-    results.forEach(res => {
+    results.forEach((res) => {
       const fId = res.frameId !== undefined ? res.frameId : 0;
       if (!resultsByFrame[fId]) resultsByFrame[fId] = [];
       resultsByFrame[fId].push(res);
     });
     chrome.runtime.sendMessage({
       type: "AQZ_SEND_ALL_FRAMES_DATA",
-      payload: { targetType, resultsByFrame }
+      payload: { targetType, resultsByFrame },
     });
   }
 
   async function onScan() {
     if (isAnalyzing) return;
-    const apiKey = document.getElementById("aqz-api-key")?.value.trim() || settings.geminiApiKey;
+    const apiKey =
+      document.getElementById("aqz-api-key")?.value.trim() ||
+      settings.geminiApiKey;
     if (!apiKey) {
       setStatus("error", "Thiếu API key", "Vào ⚙ Cài Đặt để nhập API key");
       switchTab("settings");
@@ -493,24 +550,33 @@
 
     try {
       showScanFlash();
-      
+
       // Request questions from all frames (including child iframes)
       const frameResponse = await chrome.runtime.sendMessage({
-        type: "AQZ_REQUEST_ALL_FRAMES_DATA"
+        type: "AQZ_REQUEST_ALL_FRAMES_DATA",
       });
 
       if (frameResponse && frameResponse.success && frameResponse.questions) {
         extractedQuestions = frameResponse.questions;
       } else {
         // Fallback to local frame only
-        extractedQuestions = extractQuestions().map(q => ({ ...q, frameId: 0 }));
+        extractedQuestions = extractQuestions().map((q) => ({
+          ...q,
+          frameId: 0,
+        }));
       }
 
       if (!extractedQuestions.length) {
         let diag = "Diagnostic: ";
-        const possibleEl = Array.from(document.querySelectorAll("p, div, span, td, h1, h2, h3, h4, h5, li")).find(el => {
+        const possibleEl = Array.from(
+          document.querySelectorAll("p, div, span, td, h1, h2, h3, h4, h5, li"),
+        ).find((el) => {
           const txt = el.textContent;
-          return txt.includes("Theo c mác") || txt.includes("tư bản là") || txt.includes("Câu 1");
+          return (
+            txt.includes("Theo c mác") ||
+            txt.includes("tư bản là") ||
+            txt.includes("Câu 1")
+          );
         });
         if (possibleEl) {
           diag += `[Tag: ${possibleEl.tagName}] [Class: ${possibleEl.className}] [HTML: ${possibleEl.outerHTML.slice(0, 150).replace(/</g, "&lt;").replace(/>/g, "&gt;")}]`;
@@ -521,20 +587,26 @@
         return;
       }
 
-      setStatus("loading", `Tìm thấy ${extractedQuestions.length} câu`, "AI đang suy luận...");
+      setStatus(
+        "loading",
+        `Tìm thấy ${extractedQuestions.length} câu`,
+        "AI đang suy luận...",
+      );
 
-      const modelName = document.getElementById("aqz-model-select")?.value || settings.modelName;
+      const modelName =
+        document.getElementById("aqz-model-select")?.value ||
+        settings.modelName;
       const response = await chrome.runtime.sendMessage({
         type: "ANALYZE_QUIZ",
         payload: {
-          questions: extractedQuestions.map(q => ({
+          questions: extractedQuestions.map((q) => ({
             type: q.type,
             questionText: q.questionText,
-            options: (q.options || []).map(o => ({ text: o.text }))
+            options: (q.options || []).map((o) => ({ text: o.text })),
           })),
           apiKey,
-          modelName
-        }
+          modelName,
+        },
       });
 
       if (!response?.success) throw new Error(response?.error || "Lỗi AI");
@@ -542,31 +614,45 @@
       // Attach frameId back to results to maintain frame routing
       analysisResults = response.data.map((res, idx) => ({
         ...res,
-        frameId: extractedQuestions[idx]?.frameId
+        frameId: extractedQuestions[idx]?.frameId,
       }));
 
-      const autoHL = document.getElementById("aqz-tog-hl")?.checked ?? settings.autoHighlight;
+      const autoHL =
+        document.getElementById("aqz-tog-hl")?.checked ??
+        settings.autoHighlight;
       if (autoHL) dispatchToFrames("AQZ_FRAME_HIGHLIGHT", analysisResults);
 
       renderResults(analysisResults);
       updateBadge(analysisResults.length);
 
-      const ok = analysisResults.filter(r => r.answer && !r.error).length;
+      const ok = analysisResults.filter((r) => r.answer && !r.error).length;
       if (ok === 0) {
-        const firstErr = analysisResults.find(r => r.error)?.error || "Kiểm tra API key";
-        setStatus("warning", `0/${extractedQuestions.length} câu thành công`, firstErr.slice(0, 60));
+        const firstErr =
+          analysisResults.find((r) => r.error)?.error || "Kiểm tra API key";
+        setStatus(
+          "warning",
+          `0/${extractedQuestions.length} câu thành công`,
+          firstErr.slice(0, 60),
+        );
       } else {
-        setStatus("success", `✓ Xong! ${ok}/${extractedQuestions.length} câu`, "Xem kết quả tại tab Kết Quả");
+        setStatus(
+          "success",
+          `✓ Xong! ${ok}/${extractedQuestions.length} câu`,
+          "Xem kết quả tại tab Kết Quả",
+        );
         switchTab("results");
       }
 
       const host = document.getElementById("aqz-panel-host");
       host.querySelector("#aqz-btn-autofill").disabled = false;
       host.querySelector("#aqz-btn-highlight").disabled = false;
-
     } catch (err) {
       console.error("[AutoFillQuiz]", err);
-      setStatus("error", "Lỗi xảy ra", err.message || "Kiểm tra API key và mạng");
+      setStatus(
+        "error",
+        "Lỗi xảy ra",
+        err.message || "Kiểm tra API key và mạng",
+      );
     } finally {
       setScanLoading(false);
       isAnalyzing = false;
@@ -589,7 +675,7 @@
     dispatchToFrames("AQZ_FRAME_CLEAR", analysisResults);
     clearResultsUI();
     analysisResults = [];
-    setStatus("idle", "Sẵn sàng phân tích", "Nhấn \"Quét trang\" để bắt đầu");
+    setStatus("idle", "Sẵn sàng phân tích", 'Nhấn "Quét trang" để bắt đầu');
     updateBadge(0);
     const host = document.getElementById("aqz-panel-host");
     host.querySelector("#aqz-btn-autofill").disabled = true;
@@ -598,16 +684,27 @@
 
   // ─── Settings ────────────────────────────
   async function onSaveSettings() {
-    const key   = document.getElementById("aqz-api-key")?.value.trim() || "";
-    const model = document.getElementById("aqz-model-select")?.value || "gemini-2.0-flash";
-    const hl    = document.getElementById("aqz-tog-hl")?.checked ?? true;
-    const exp   = document.getElementById("aqz-tog-exp")?.checked ?? true;
+    const key = document.getElementById("aqz-api-key")?.value.trim() || "";
+    const model =
+      document.getElementById("aqz-model-select")?.value || "gemini-2.0-flash";
+    const hl = document.getElementById("aqz-tog-hl")?.checked ?? true;
+    const exp = document.getElementById("aqz-tog-exp")?.checked ?? true;
 
-    settings = { geminiApiKey: key, modelName: model, autoHighlight: hl, showExplanation: exp };
+    settings = {
+      geminiApiKey: key,
+      modelName: model,
+      autoHighlight: hl,
+      showExplanation: exp,
+    };
 
     await chrome.runtime.sendMessage({
       type: "SAVE_SETTINGS",
-      payload: { geminiApiKey: key, modelName: model, autoHighlight: hl, showExplanation: exp }
+      payload: {
+        geminiApiKey: key,
+        modelName: model,
+        autoHighlight: hl,
+        showExplanation: exp,
+      },
     });
 
     const btn = document.getElementById("aqz-btn-save");
@@ -625,7 +722,7 @@
 
   function onToggleKeyVisibility() {
     const input = document.getElementById("aqz-api-key");
-    const icon  = document.getElementById("aqz-eye-icon");
+    const icon = document.getElementById("aqz-eye-icon");
     if (!input) return;
     const isPassword = input.type === "password";
     input.type = isPassword ? "text" : "password";
@@ -635,23 +732,25 @@
   }
 
   async function loadSettings() {
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       chrome.storage.sync.get(
         ["geminiApiKey", "modelName", "autoHighlight", "showExplanation"],
-        result => {
+        (result) => {
           if (result.geminiApiKey) settings.geminiApiKey = result.geminiApiKey;
-          
+
           // Auto-migrate from rate-limited 2.0-flash to stable 1.5-flash for existing settings
           if (result.modelName && result.modelName !== "gemini-2.0-flash") {
             settings.modelName = result.modelName;
           } else {
             settings.modelName = "gemini-1.5-flash";
           }
-          
-          if (result.autoHighlight !== undefined) settings.autoHighlight   = result.autoHighlight;
-          if (result.showExplanation !== undefined) settings.showExplanation = result.showExplanation;
+
+          if (result.autoHighlight !== undefined)
+            settings.autoHighlight = result.autoHighlight;
+          if (result.showExplanation !== undefined)
+            settings.showExplanation = result.showExplanation;
           resolve();
-        }
+        },
       );
     });
   }
@@ -659,11 +758,12 @@
   function syncSettingsToUI() {
     const apiInput = document.getElementById("aqz-api-key");
     const modelSel = document.getElementById("aqz-model-select");
-    const togHL    = document.getElementById("aqz-tog-hl");
-    const togExp   = document.getElementById("aqz-tog-exp");
-    if (apiInput && settings.geminiApiKey) apiInput.value = settings.geminiApiKey;
-    if (modelSel  && settings.modelName)   modelSel.value  = settings.modelName;
-    if (togHL)  togHL.checked  = settings.autoHighlight;
+    const togHL = document.getElementById("aqz-tog-hl");
+    const togExp = document.getElementById("aqz-tog-exp");
+    if (apiInput && settings.geminiApiKey)
+      apiInput.value = settings.geminiApiKey;
+    if (modelSel && settings.modelName) modelSel.value = settings.modelName;
+    if (togHL) togHL.checked = settings.autoHighlight;
     if (togExp) togExp.checked = settings.showExplanation;
   }
 
@@ -673,13 +773,13 @@
 
   function extractQuestions() {
     const questions = [];
-    
+
     // 1. Extract from the current frame's document
     questions.push(...extractFromDoc(document));
 
     // 2. Extract from any same-origin iframes recursively
     try {
-      document.querySelectorAll("iframe").forEach(iframe => {
+      document.querySelectorAll("iframe").forEach((iframe) => {
         try {
           const doc = iframe.contentDocument || iframe.contentWindow?.document;
           if (doc) {
@@ -693,7 +793,7 @@
 
     // Deduplicate
     const seen = new Set();
-    return questions.filter(q => {
+    return questions.filter((q) => {
       const key = q.questionText.trim().slice(0, 60);
       if (seen.has(key)) return false;
       seen.add(key);
@@ -715,9 +815,10 @@
   }
 
   function extractRadioGroups(rootDoc = document) {
-    const questions = [], groups = {};
-    rootDoc.querySelectorAll('input[type="radio"]').forEach(r => {
-      if (r.closest('#aqz-panel-host')) return; // skip our own panel
+    const questions = [],
+      groups = {};
+    rootDoc.querySelectorAll('input[type="radio"]').forEach((r) => {
+      if (r.closest("#aqz-panel-host")) return; // skip our own panel
       const name = r.name || "g_" + Math.random();
       if (!groups[name]) groups[name] = [];
       groups[name].push(r);
@@ -726,190 +827,316 @@
       if (radios.length < 2 || radios.length > 10) continue;
       const questionText = findQuestionText(radios[0]);
       if (!questionText) continue;
-      const options = radios.map(r => ({ text: findLabelFor(r) || r.value || "", element: r, labelElement: findLabelElementFor(r) })).filter(o => o.text);
+      const options = radios
+        .map((r) => ({
+          text: findLabelFor(r) || r.value || "",
+          element: r,
+          labelElement: findLabelElementFor(r),
+        }))
+        .filter((o) => o.text);
       if (options.length < 2) continue;
-      questions.push({ type: "multiple_choice", questionText, options, questionElement: findQuestionElement(radios[0]), inputType: "radio" });
+      questions.push({
+        type: "multiple_choice",
+        questionText,
+        options,
+        questionElement: findQuestionElement(radios[0]),
+        inputType: "radio",
+      });
     }
     return questions;
   }
 
   function extractCheckboxGroups(rootDoc = document) {
-    const questions = [], processed = new Set();
-    rootDoc.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-      if (cb.closest('#aqz-panel-host')) return; // skip our own panel
+    const questions = [],
+      processed = new Set();
+    rootDoc.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+      if (cb.closest("#aqz-panel-host")) return; // skip our own panel
       if (processed.has(cb)) return;
       const container = findCheckboxContainer(cb);
       if (!container) return;
-      const cbs = Array.from(container.querySelectorAll('input[type="checkbox"]'));
+      const cbs = Array.from(
+        container.querySelectorAll('input[type="checkbox"]'),
+      );
       if (cbs.length < 2) return;
-      cbs.forEach(c => processed.add(c));
+      cbs.forEach((c) => processed.add(c));
       const questionText = findQuestionText(cbs[0]);
       if (!questionText) return;
-      const options = cbs.map(c => ({ text: findLabelFor(c) || c.value || "", element: c, labelElement: findLabelElementFor(c) })).filter(o => o.text);
+      const options = cbs
+        .map((c) => ({
+          text: findLabelFor(c) || c.value || "",
+          element: c,
+          labelElement: findLabelElementFor(c),
+        }))
+        .filter((o) => o.text);
       if (options.length < 2) return;
-      questions.push({ type: "multiple_choice", questionText, options, questionElement: findQuestionElement(cbs[0]), inputType: "checkbox" });
+      questions.push({
+        type: "multiple_choice",
+        questionText,
+        options,
+        questionElement: findQuestionElement(cbs[0]),
+        inputType: "checkbox",
+      });
     });
     return questions;
   }
 
   function extractSelectDropdowns(rootDoc = document) {
     const questions = [];
-    rootDoc.querySelectorAll("select").forEach(sel => {
-      if (sel.closest('#aqz-panel-host')) return; // skip our own panel
-      const validOpts = Array.from(sel.options).filter(o => o.value && o.text.trim());
+    rootDoc.querySelectorAll("select").forEach((sel) => {
+      if (sel.closest("#aqz-panel-host")) return; // skip our own panel
+      const validOpts = Array.from(sel.options).filter(
+        (o) => o.value && o.text.trim(),
+      );
       if (validOpts.length < 2) return;
       const questionText = findQuestionText(sel);
       if (!questionText) return;
-      questions.push({ type: "multiple_choice", questionText, options: validOpts.map(o => ({ text: o.text.trim(), element: o, selectElement: sel })), questionElement: findQuestionElement(sel), inputType: "select", selectElement: sel });
+      questions.push({
+        type: "multiple_choice",
+        questionText,
+        options: validOpts.map((o) => ({
+          text: o.text.trim(),
+          element: o,
+          selectElement: sel,
+        })),
+        questionElement: findQuestionElement(sel),
+        inputType: "select",
+        selectElement: sel,
+      });
     });
     return questions;
   }
 
   function extractFillBlanks(rootDoc = document) {
     const questions = [];
-    const skipTypes = new Set(["submit", "button", "image", "hidden", "file", "radio", "checkbox"]);
-    rootDoc.querySelectorAll('input[type="text"], input:not([type]), textarea').forEach(inp => {
-      if (inp.type && skipTypes.has(inp.type)) return;
-      if (inp.closest("#aqz-panel-host")) return;
-      const questionText = findQuestionText(inp);
-      if (!questionText || questionText.length < 5) return;
-      questions.push({ type: "fill_blank", questionText, options: [], questionElement: findQuestionElement(inp), inputType: "text", inputElement: inp });
-    });
+    const skipTypes = new Set([
+      "submit",
+      "button",
+      "image",
+      "hidden",
+      "file",
+      "radio",
+      "checkbox",
+    ]);
+    rootDoc
+      .querySelectorAll('input[type="text"], input:not([type]), textarea')
+      .forEach((inp) => {
+        if (inp.type && skipTypes.has(inp.type)) return;
+        if (inp.closest("#aqz-panel-host")) return;
+        const questionText = findQuestionText(inp);
+        if (!questionText || questionText.length < 5) return;
+        questions.push({
+          type: "fill_blank",
+          questionText,
+          options: [],
+          questionElement: findQuestionElement(inp),
+          inputType: "text",
+          inputElement: inp,
+        });
+      });
     return questions;
   }
 
   function extractGoogleForms(rootDoc = document) {
     const questions = [];
-    rootDoc.querySelectorAll('[role="listitem"], .Qr7Oae, .geS5n').forEach(c => {
-      const qEl = c.querySelector('.M7eMe, [role="heading"], .z12JJ');
-      if (!qEl) return;
-      const questionText = qEl.textContent.trim();
-      if (!questionText) return;
-      const radioOpts = c.querySelectorAll('[role="radio"], [role="checkbox"]');
-      if (radioOpts.length >= 2) {
-        const options = Array.from(radioOpts).map(o => ({
-          text: o.querySelector('.YEVVod')?.textContent?.trim() || o.getAttribute("aria-label") || "",
-          element: o, labelElement: o
-        })).filter(o => o.text);
-        if (options.length >= 2) questions.push({ type: "multiple_choice", questionText, options, questionElement: c, inputType: "gforms_radio" });
-      }
-      const textInp = c.querySelector('input[type="text"], textarea');
-      if (textInp && radioOpts.length === 0) {
-        questions.push({ type: "fill_blank", questionText, options: [], questionElement: c, inputType: "text", inputElement: textInp });
-      }
-    });
+    rootDoc
+      .querySelectorAll('[role="listitem"], .Qr7Oae, .geS5n')
+      .forEach((c) => {
+        const qEl = c.querySelector('.M7eMe, [role="heading"], .z12JJ');
+        if (!qEl) return;
+        const questionText = qEl.textContent.trim();
+        if (!questionText) return;
+        const radioOpts = c.querySelectorAll(
+          '[role="radio"], [role="checkbox"]',
+        );
+        if (radioOpts.length >= 2) {
+          const options = Array.from(radioOpts)
+            .map((o) => ({
+              text:
+                o.querySelector(".YEVVod")?.textContent?.trim() ||
+                o.getAttribute("aria-label") ||
+                "",
+              element: o,
+              labelElement: o,
+            }))
+            .filter((o) => o.text);
+          if (options.length >= 2)
+            questions.push({
+              type: "multiple_choice",
+              questionText,
+              options,
+              questionElement: c,
+              inputType: "gforms_radio",
+            });
+        }
+        const textInp = c.querySelector('input[type="text"], textarea');
+        if (textInp && radioOpts.length === 0) {
+          questions.push({
+            type: "fill_blank",
+            questionText,
+            options: [],
+            questionElement: c,
+            inputType: "text",
+            inputElement: textInp,
+          });
+        }
+      });
     return questions;
   }
 
   function extractGenericQuestions(rootDoc = document) {
     const questions = [];
     const pat = /^\s*(\d+[\.\)]|câu\s+\d+|question\s+\d+)/i;
-    
-    rootDoc.querySelectorAll("p, li, div, span, h1,h2,h3,h4,h5, td, strong, b").forEach(el => {
-      if (el.closest('#aqz-panel-host')) return; // skip our own panel
-      
-      let text = el.textContent.trim();
-      if (!pat.test(text)) return;
-      
-      let targetEl = el;
-      // If the matched element is too short (e.g. just a split "Câu 1:"), walk up to merge text
-      if (text.length < 12) {
-        let parent = el.parentElement;
-        let depth = 0;
-        while (parent && depth < 3) {
-          const parentText = parent.textContent.trim();
-          if (parentText.length >= 12 && parentText.length < 500) {
-            targetEl = parent;
-            text = parentText;
-            break;
+
+    rootDoc
+      .querySelectorAll("p, li, div, span, h1,h2,h3,h4,h5, td, strong, b")
+      .forEach((el) => {
+        if (el.closest("#aqz-panel-host")) return; // skip our own panel
+
+        let text = el.textContent.trim();
+        if (!pat.test(text)) return;
+
+        let targetEl = el;
+        // If the matched element is too short (e.g. just a split "Câu 1:"), walk up to merge text
+        if (text.length < 12) {
+          let parent = el.parentElement;
+          let depth = 0;
+          while (parent && depth < 3) {
+            const parentText = parent.textContent.trim();
+            if (parentText.length >= 12 && parentText.length < 500) {
+              targetEl = parent;
+              text = parentText;
+              break;
+            }
+            parent = parent.parentElement;
+            depth++;
           }
-          parent = parent.parentElement;
-          depth++;
         }
-      }
-      
-      if (text.length < 10 || text.length > 500) return;
-      
-      const answers = findNearbyOptions(targetEl);
-      if (answers.length >= 2) {
-        questions.push({
-          type: "multiple_choice",
-          questionText: text,
-          options: answers,
-          questionElement: targetEl,
-          inputType: "text_only"
-        });
-      }
-    });
+
+        if (text.length < 10 || text.length > 500) return;
+
+        const answers = findNearbyOptions(targetEl);
+        if (answers.length >= 2) {
+          questions.push({
+            type: "multiple_choice",
+            questionText: text,
+            options: answers,
+            questionElement: targetEl,
+            inputType: "text_only",
+          });
+        }
+      });
     return questions;
   }
 
   // ─── DOM helpers ─────────────────────────
   function findQuestionText(element) {
     const strategies = [
-      () => element.closest("fieldset")?.querySelector("legend")?.textContent?.trim(),
-      () => { const id = element.getAttribute("aria-labelledby"); return id ? document.getElementById(id)?.textContent?.trim() : null; },
-      () => element.id ? document.querySelector(`label[for="${element.id}"]`)?.textContent?.trim() : null,
+      () =>
+        element
+          .closest("fieldset")
+          ?.querySelector("legend")
+          ?.textContent?.trim(),
       () => {
-        let el = element.parentElement, d = 0;
+        const id = element.getAttribute("aria-labelledby");
+        return id ? document.getElementById(id)?.textContent?.trim() : null;
+      },
+      () =>
+        element.id
+          ? document
+              .querySelector(`label[for="${element.id}"]`)
+              ?.textContent?.trim()
+          : null,
+      () => {
+        let el = element.parentElement,
+          d = 0;
         while (el && d < 8) {
           for (const h of el.querySelectorAll("h1,h2,h3,h4,h5,h6,p,strong,b")) {
             const t = h.textContent.trim();
-            if (t.length > 10 && t.length < 500 && !h.querySelector("input,select,textarea")) return t;
+            if (
+              t.length > 10 &&
+              t.length < 500 &&
+              !h.querySelector("input,select,textarea")
+            )
+              return t;
           }
-          el = el.parentElement; d++;
+          el = el.parentElement;
+          d++;
         }
         return null;
       },
       () => {
-        let s = element.parentElement?.previousElementSibling, d = 0;
+        let s = element.parentElement?.previousElementSibling,
+          d = 0;
         while (s && d < 4) {
           const t = s.textContent.trim();
           if (t.length > 10 && t.length < 500) return t;
-          s = s.previousElementSibling; d++;
+          s = s.previousElementSibling;
+          d++;
         }
         return null;
-      }
+      },
     ];
     for (const fn of strategies) {
-      try { const r = fn(); if (r && r.length > 5) return r; } catch {}
+      try {
+        const r = fn();
+        if (r && r.length > 5) return r;
+      } catch {}
     }
     return null;
   }
 
   function findQuestionElement(el) {
-    let e = el.parentElement, d = 0;
+    let e = el.parentElement,
+      d = 0;
     while (e && d < 6) {
-      if (e.querySelectorAll('input[type="radio"], input[type="checkbox"]').length >= 2) return e;
+      if (
+        e.querySelectorAll('input[type="radio"], input[type="checkbox"]')
+          .length >= 2
+      )
+        return e;
       if (e.tagName === "FORM" || e.tagName === "FIELDSET") return e;
-      e = e.parentElement; d++;
+      e = e.parentElement;
+      d++;
     }
     return el.closest("div, section, article") || el.parentElement;
   }
 
   function findLabelFor(input) {
-    if (input.id) { const l = document.querySelector(`label[for="${input.id}"]`); if (l) return l.textContent.trim(); }
+    if (input.id) {
+      const l = document.querySelector(`label[for="${input.id}"]`);
+      if (l) return l.textContent.trim();
+    }
     const wrap = input.closest("label");
     if (wrap) return wrap.textContent.trim();
-    if (input.getAttribute("aria-label")) return input.getAttribute("aria-label");
+    if (input.getAttribute("aria-label"))
+      return input.getAttribute("aria-label");
     const next = input.nextElementSibling;
     if (next) return next.textContent.trim();
     const p = input.parentElement;
-    if (p) { const c = p.cloneNode(true); c.querySelectorAll("input").forEach(i => i.remove()); return c.textContent.trim(); }
+    if (p) {
+      const c = p.cloneNode(true);
+      c.querySelectorAll("input").forEach((i) => i.remove());
+      return c.textContent.trim();
+    }
     return input.value || "";
   }
 
   function findLabelElementFor(input) {
-    if (input.id) { const l = document.querySelector(`label[for="${input.id}"]`); if (l) return l; }
+    if (input.id) {
+      const l = document.querySelector(`label[for="${input.id}"]`);
+      if (l) return l;
+    }
     return input.closest("label") || input.parentElement;
   }
 
   function findCheckboxContainer(cb) {
-    let el = cb.parentElement, d = 0;
+    let el = cb.parentElement,
+      d = 0;
     while (el && d < 6) {
       const c = el.querySelectorAll('input[type="checkbox"]');
       if (c.length >= 2 && c.length <= 10) return el;
-      el = el.parentElement; d++;
+      el = el.parentElement;
+      d++;
     }
     return null;
   }
@@ -917,7 +1144,7 @@
   function findNearbyOptions(qEl) {
     const opts = [];
     const optPat = /^\s*[a-d]([\.\)]\s*|\s+)/i;
-    
+
     // Strategy 1: Sibling elements starting with options pattern directly
     let sibling = qEl.nextElementSibling;
     let n = 0;
@@ -940,7 +1167,11 @@
         if (item.children.length > 3) continue;
         const text = item.textContent.trim();
         if (optPat.test(text)) {
-          if (!opts.some(o => o.element.contains(item) || item.contains(o.element))) {
+          if (
+            !opts.some(
+              (o) => o.element.contains(item) || item.contains(o.element),
+            )
+          ) {
             opts.push({ text: text, element: item, labelElement: item });
           }
         }
@@ -958,7 +1189,11 @@
         if (item.children.length > 3) continue;
         const text = item.textContent.trim();
         if (optPat.test(text)) {
-          if (!opts.some(o => o.element.contains(item) || item.contains(o.element))) {
+          if (
+            !opts.some(
+              (o) => o.element.contains(item) || item.contains(o.element),
+            )
+          ) {
             opts.push({ text: text, element: item, labelElement: item });
           }
         }
@@ -976,9 +1211,11 @@
     if (!extractedQuestions.length) {
       extractedQuestions = extractQuestions();
     }
-    results.forEach(result => {
+    results.forEach((result) => {
       if (!result.answer) return;
-      const q = extractedQuestions.find(q => q.questionText.trim() === result.questionText.trim());
+      const q = extractedQuestions.find(
+        (q) => q.questionText.trim() === result.questionText.trim(),
+      );
       if (!q) return;
       if (result.type === "fill_blank") highlightFillBlank(q, result);
       else highlightMCQ(q, result);
@@ -988,17 +1225,19 @@
   function highlightMCQ(question, result) {
     const { options } = question;
     const correctIndex = result.answer?.answerIndex ?? -1;
-    const correctText  = (result.answer?.answerText || "").toLowerCase();
+    const correctText = (result.answer?.answerText || "").toLowerCase();
     const correctLetter = (result.answer?.answer || "").toUpperCase();
     const showExp = settings.showExplanation;
 
     options.forEach((opt, idx) => {
-      const isCorrect = idx === correctIndex ||
+      const isCorrect =
+        idx === correctIndex ||
         opt.text.toLowerCase().includes(correctText) ||
         opt.text.toUpperCase().startsWith(correctLetter + ".");
       const el = opt.labelElement || opt.element;
       if (!el) return;
-      if (window.getComputedStyle(el).position === "static") el.style.position = "relative";
+      if (window.getComputedStyle(el).position === "static")
+        el.style.position = "relative";
 
       if (isCorrect) {
         el.classList.add("aqz-highlight-correct");
@@ -1009,11 +1248,16 @@
         if (showExp && result.answer?.explanation) {
           const tip = document.createElement("span");
           tip.className = "aqz-injected";
-          tip.style.cssText = "display:none;position:absolute;bottom:calc(100% + 6px);left:0;background:#0f172a;color:#e2e8f0;font-size:11px;padding:6px 10px;border-radius:8px;max-width:260px;white-space:normal;z-index:2147483647;border:1px solid rgba(99,102,241,0.3);line-height:1.5;";
+          tip.style.cssText =
+            "display:none;position:absolute;bottom:calc(100% + 6px);left:0;background:#0f172a;color:#e2e8f0;font-size:11px;padding:6px 10px;border-radius:8px;max-width:260px;white-space:normal;z-index:2147483647;border:1px solid rgba(99,102,241,0.3);line-height:1.5;";
           tip.textContent = result.answer.explanation;
           el.appendChild(tip);
-          el.addEventListener("mouseenter", () => { tip.style.display = "block"; });
-          el.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+          el.addEventListener("mouseenter", () => {
+            tip.style.display = "block";
+          });
+          el.addEventListener("mouseleave", () => {
+            tip.style.display = "none";
+          });
         }
       } else {
         el.classList.add("aqz-highlight-wrong");
@@ -1038,12 +1282,19 @@
     if (!extractedQuestions.length) {
       extractedQuestions = extractQuestions();
     }
-    results.forEach(result => {
+    results.forEach((result) => {
       if (!result.answer) return;
-      const q = extractedQuestions.find(q => q.questionText.trim() === result.questionText.trim());
+      const q = extractedQuestions.find(
+        (q) => q.questionText.trim() === result.questionText.trim(),
+      );
       if (!q) return;
-      if (result.type === "fill_blank") { fillTextInput(q, result); filled++; }
-      else { fillMCQ(q, result); filled++; }
+      if (result.type === "fill_blank") {
+        fillTextInput(q, result);
+        filled++;
+      } else {
+        fillMCQ(q, result);
+        filled++;
+      }
     });
     if (isMainFrame) {
       showToast(`⚡ Đã tự động điền ${filled} câu`, "success");
@@ -1054,34 +1305,58 @@
     const idx = result.answer?.answerIndex ?? -1;
     if (q.inputType === "select" && q.selectElement) {
       const opt = q.selectElement.options[idx];
-      if (opt) { q.selectElement.value = opt.value; q.selectElement.dispatchEvent(new Event("change", { bubbles: true })); }
+      if (opt) {
+        q.selectElement.value = opt.value;
+        q.selectElement.dispatchEvent(new Event("change", { bubbles: true }));
+      }
       return;
     }
     if (q.inputType === "gforms_radio") {
       const t = q.options[idx]?.element;
-      if (t) { t.click(); setTimeout(() => t.dispatchEvent(new MouseEvent("click", { bubbles: true })), 100); }
+      if (t) {
+        t.click();
+        setTimeout(
+          () => t.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+          100,
+        );
+      }
       return;
     }
     const t = q.options[idx]?.element;
-    if (t) { t.checked = true; t.click(); t.dispatchEvent(new Event("change", { bubbles: true })); }
+    if (t) {
+      t.checked = true;
+      t.click();
+      t.dispatchEvent(new Event("change", { bubbles: true }));
+    }
   }
 
   function fillTextInput(q, result) {
     const input = q.inputElement;
     if (!input) return;
     const val = result.answer?.answer || result.answer || "";
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-    if (setter) setter.call(input, val); else input.value = val;
-    ["input", "change", "keyup"].forEach(evt => input.dispatchEvent(new Event(evt, { bubbles: true })));
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    if (setter) setter.call(input, val);
+    else input.value = val;
+    ["input", "change", "keyup"].forEach((evt) =>
+      input.dispatchEvent(new Event(evt, { bubbles: true })),
+    );
   }
 
   function clearHighlights() {
-    document.querySelectorAll(".aqz-highlight-correct, .aqz-highlight-wrong").forEach(el => {
-      el.classList.remove("aqz-highlight-correct", "aqz-highlight-wrong");
-      el.style.position = "";
+    document
+      .querySelectorAll(".aqz-highlight-correct, .aqz-highlight-wrong")
+      .forEach((el) => {
+        el.classList.remove("aqz-highlight-correct", "aqz-highlight-wrong");
+        el.style.position = "";
+      });
+    document.querySelectorAll(".aqz-injected").forEach((el) => el.remove());
+    document.querySelectorAll('input[style*="outline"]').forEach((el) => {
+      el.style.outline = "";
+      el.style.outlineOffset = "";
     });
-    document.querySelectorAll(".aqz-injected").forEach(el => el.remove());
-    document.querySelectorAll('input[style*="outline"]').forEach(el => { el.style.outline = ""; el.style.outlineOffset = ""; });
   }
 
   // ════════════════════════════════════════════
@@ -1092,7 +1367,7 @@
     const list = document.getElementById("aqz-results-list");
     const empty = document.getElementById("aqz-empty-state");
     if (!list) return;
-    list.querySelectorAll(".aqz-result-card").forEach(el => el.remove());
+    list.querySelectorAll(".aqz-result-card").forEach((el) => el.remove());
     if (!results.length) {
       if (empty) empty.classList.remove("aqz-hidden");
       return;
@@ -1113,8 +1388,11 @@
       } else {
         ansHtml = `<span class="aqz-answer-chip">${esc(r.answer?.answer || "?")}. ${esc(trunc(r.answer?.answerText || "", 28))}</span>${confChip(r.answer?.confidence)}`;
       }
-      const expHtml = showExp && r.answer?.explanation ? `<div class="aqz-result-exp">💬 ${esc(r.answer.explanation)}</div>` : "";
-      card.innerHTML = `<div class="aqz-result-q">📝 <strong>${i+1}.</strong> ${qText}</div><div class="aqz-result-ans">${ansHtml}</div>${expHtml}`;
+      const expHtml =
+        showExp && r.answer?.explanation
+          ? `<div class="aqz-result-exp">💬 ${esc(r.answer.explanation)}</div>`
+          : "";
+      card.innerHTML = `<div class="aqz-result-q">📝 <strong>${i + 1}.</strong> ${qText}</div><div class="aqz-result-ans">${ansHtml}</div>${expHtml}`;
       list.appendChild(card);
     });
   }
@@ -1127,17 +1405,33 @@
 
   function clearResultsUI() {
     const list = document.getElementById("aqz-results-list");
-    if (list) list.querySelectorAll(".aqz-result-card").forEach(el => el.remove());
+    if (list)
+      list.querySelectorAll(".aqz-result-card").forEach((el) => el.remove());
     const empty = document.getElementById("aqz-empty-state");
     if (empty) empty.classList.remove("aqz-hidden");
   }
 
   const statusCfg = {
-    idle:    { color: "#6366f1", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>` },
-    loading: { color: "#6366f1", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" style="animation:aqzSpin 0.9s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>` },
-    success: { color: "#22c55e", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>` },
-    warning: { color: "#eab308", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><circle cx="12" cy="17" r="1" fill="currentColor"/></svg>` },
-    error:   { color: "#ef4444", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>` }
+    idle: {
+      color: "#6366f1",
+      svg: `<svg viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
+    },
+    loading: {
+      color: "#6366f1",
+      svg: `<svg viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" style="animation:aqzSpin 0.9s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`,
+    },
+    success: {
+      color: "#22c55e",
+      svg: `<svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>`,
+    },
+    warning: {
+      color: "#eab308",
+      svg: `<svg viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><circle cx="12" cy="17" r="1" fill="currentColor"/></svg>`,
+    },
+    error: {
+      color: "#ef4444",
+      svg: `<svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
+    },
   };
 
   function setStatus(type, label, sub) {
@@ -1146,12 +1440,12 @@
     if (icon) {
       icon.innerHTML = cfg.svg;
       icon.style.borderColor = cfg.color + "40";
-      icon.style.background  = cfg.color + "18";
+      icon.style.background = cfg.color + "18";
     }
     const lbl = document.getElementById("aqz-status-label");
-    const s   = document.getElementById("aqz-status-sub");
+    const s = document.getElementById("aqz-status-sub");
     if (lbl) lbl.textContent = label;
-    if (s)   s.textContent   = sub;
+    if (s) s.textContent = sub;
   }
 
   function setScanLoading(loading) {
@@ -1165,16 +1459,23 @@
 
   function updateBadge(count) {
     const badge = document.getElementById("aqz-results-badge");
-    const cnt   = document.getElementById("aqz-count-badge");
-    if (badge) { badge.style.display = count > 0 ? "inline" : "none"; badge.textContent = count; }
-    if (cnt)   cnt.textContent = `${count} câu`;
+    const cnt = document.getElementById("aqz-count-badge");
+    if (badge) {
+      badge.style.display = count > 0 ? "inline" : "none";
+      badge.textContent = count;
+    }
+    if (cnt) cnt.textContent = `${count} câu`;
   }
 
   function switchTab(name) {
     const host = document.getElementById("aqz-panel-host");
     if (!host) return;
-    host.querySelectorAll(".aqz-tab").forEach(b => b.classList.remove("active"));
-    host.querySelectorAll(".aqz-tab-panel").forEach(p => p.classList.remove("active"));
+    host
+      .querySelectorAll(".aqz-tab")
+      .forEach((b) => b.classList.remove("active"));
+    host
+      .querySelectorAll(".aqz-tab-panel")
+      .forEach((p) => p.classList.remove("active"));
     host.querySelector(`[data-tab="${name}"]`)?.classList.add("active");
     host.querySelector(`#aqz-panel-${name}`)?.classList.add("active");
   }
@@ -1187,15 +1488,29 @@
   }
 
   function showToast(msg, type = "info") {
-    document.querySelectorAll(".aqz-toast").forEach(t => t.remove());
+    document.querySelectorAll(".aqz-toast").forEach((t) => t.remove());
     const t = document.createElement("div");
     t.className = `aqz-toast ${type} aqz-injected`;
     t.innerHTML = `<span>${msg}</span>`;
     document.body.appendChild(t);
-    setTimeout(() => { if (t.isConnected) { t.style.opacity = "0"; t.style.transition = "opacity 0.3s"; setTimeout(() => t.remove(), 300); } }, 3000);
+    setTimeout(() => {
+      if (t.isConnected) {
+        t.style.opacity = "0";
+        t.style.transition = "opacity 0.3s";
+        setTimeout(() => t.remove(), 300);
+      }
+    }, 3000);
   }
 
-  function trunc(s, n) { if (!s) return ""; return s.length > n ? s.slice(0, n) + "…" : s; }
-  function esc(s) { if (!s) return ""; return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-
+  function trunc(s, n) {
+    if (!s) return "";
+    return s.length > n ? s.slice(0, n) + "…" : s;
+  }
+  function esc(s) {
+    if (!s) return "";
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
 })();
