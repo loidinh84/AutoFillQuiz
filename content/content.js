@@ -395,6 +395,7 @@
       } finally {
         btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg> Kiểm tra API Key`;
         btn.disabled = false;
+      }
     });
 
     // Refresh model list button
