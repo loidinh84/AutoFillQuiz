@@ -299,30 +299,47 @@ async function geminiRequestDirect({ prompt, apiKey, model, maxTokens }) {
   const GEMINI_BASE_V1 = "https://generativelanguage.googleapis.com/v1/models";
   const GEMINI_BASE_V1BETA = "https://generativelanguage.googleapis.com/v1beta/models";
   
-  const endpoints = model.startsWith("gemini-2")
-    ? [GEMINI_BASE_V1BETA, GEMINI_BASE_V1]
-    : [GEMINI_BASE_V1, GEMINI_BASE_V1BETA];
+  // Prioritize v1beta because it supports JSON mode and all new models.
+  // Fall back to v1 without JSON mode if v1beta fails or doesn't support the model.
+  const endpoints = [
+    { base: GEMINI_BASE_V1BETA, useJson: true },
+    { base: GEMINI_BASE_V1, useJson: false }
+  ];
 
   let lastErr = null;
-  for (const base of endpoints) {
+  for (const ep of endpoints) {
     try {
-      const res = await fetch(`${base}/${model}:generateContent?key=${apiKey}`, {
+      const genConfig = { 
+        temperature: 0.1, 
+        maxOutputTokens: maxTokens || 2048
+      };
+      if (ep.useJson) {
+        genConfig.responseMimeType = "application/json";
+      }
+
+      const res = await fetch(`${ep.base}/${model}:generateContent?key=${apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { 
-            temperature: 0.1, 
-            maxOutputTokens: maxTokens || 2048,
-            responseMimeType: "application/json"
-          }
+          generationConfig: genConfig
         })
       });
 
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
         const msg = errBody?.error?.message || `HTTP ${res.status}`;
-        if (msg.includes("not found") || msg.includes("not supported") || res.status === 404 || msg.includes("no longer available")) {
+        
+        // If endpoint is not found, or responseMimeType is not supported, fall back
+        const isFallbackError = 
+          msg.includes("not found") || 
+          msg.includes("not supported") || 
+          msg.includes("no longer available") || 
+          msg.includes("responseMimeType") || 
+          msg.includes("Unknown name") ||
+          res.status === 404;
+
+        if (isFallbackError) {
           lastErr = new Error(msg);
           continue;
         }
@@ -334,7 +351,14 @@ async function geminiRequestDirect({ prompt, apiKey, model, maxTokens }) {
       if (!text) throw new Error("Không có phản hồi từ AI");
       return text;
     } catch (err) {
-      if (err.message.includes("not found") || err.message.includes("not supported") || err.message.includes("no longer available")) {
+      const isFallbackError = 
+        err.message.includes("not found") || 
+        err.message.includes("not supported") || 
+        err.message.includes("no longer available") || 
+        err.message.includes("responseMimeType") || 
+        err.message.includes("Unknown name");
+
+      if (isFallbackError) {
         lastErr = err;
         continue;
       }
