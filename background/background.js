@@ -120,19 +120,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// ─── Gemini API call ───────────────────────
-
-// Model fallback chain: if primary model not available, try alternatives
+// Model fallback chain: prefer stable, widely-available models
+// Note: gemini-2.5-flash is NOT available to new users, excluded intentionally
 const MODEL_FALLBACK_CHAIN = [
-  "gemini-1.5-flash",
-  "gemini-1.5-flash-latest",
   "gemini-2.0-flash",
   "gemini-2.0-flash-lite",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-latest",
+  "gemini-1.5-flash-001",
   "gemini-1.0-pro",
   "gemini-pro"
 ];
 
-// List available models for a given API key
+// Models that appear in LIST but are restricted or deprecated for new users
+const EXCLUDED_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.5-pro",
+  "gemini-2.5-flash-preview"
+];
 async function listAvailableModels(apiKey) {
   try {
     const res = await fetch(
@@ -143,7 +148,8 @@ async function listAvailableModels(apiKey) {
     const data = await res.json();
     return (data.models || [])
       .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
-      .map(m => m.name.replace("models/", ""));
+      .map(m => m.name.replace("models/", ""))
+      .filter(m => !EXCLUDED_MODELS.some(ex => m.startsWith(ex)));
   } catch {
     return [];
   }

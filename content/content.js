@@ -350,11 +350,15 @@
           const modelList = response.models.slice(0, 10).join("\n");
           resultEl.style.borderColor = "rgba(34,197,94,0.4)";
           resultEl.innerHTML = `✅ <strong>API Key hợp lệ!</strong><br>Model khả dụng (${response.models.length}):<br><code style="font-size:10px;white-space:pre;display:block;margin-top:4px;">${response.models.slice(0, 8).join('\n')}</code>`;
-          // Auto-select first flash model if current not in list
+          // Auto-select best safe model if current not in list
           const selEl = document.getElementById("aqz-model-select");
           const cur = selEl?.value;
           if (selEl && !response.models.includes(cur)) {
-            const best = response.models.find(m => m.includes("flash")) || response.models[0];
+            // Priority order: prefer stable models, avoid 2.5 (not available to new users)
+            const PREFERRED = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.0-pro"];
+            const best = PREFERRED.find(p => response.models.includes(p)) || 
+                         response.models.find(m => m.includes("flash") && !m.includes("2.5")) ||
+                         response.models[0];
             if (best) {
               // Add option if not already in dropdown
               if (!selEl.querySelector(`option[value="${best}"]`)) {
@@ -366,6 +370,7 @@
               selEl.value = best;
             }
           }
+
         } else {
           resultEl.style.borderColor = "rgba(239,68,68,0.4)";
           resultEl.innerHTML = "❌ <strong>API Key không hợp lệ</strong> hoặc chưa kích hoạt Gemini API.<br><small>Vào <a href='https://aistudio.google.com/app/apikey' target='_blank' style='color:#a5b4fc'>aistudio.google.com</a> để lấy key mới.</small>";
