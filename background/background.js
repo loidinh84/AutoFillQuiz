@@ -63,6 +63,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "GEMINI_REQUEST") {
+    geminiRequestDirect(message.payload)
+      .then(text => sendResponse({ success: true, text }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+
   // Gather questions from all frames in the tab
   if (message.type === "AQZ_REQUEST_ALL_FRAMES_DATA") {
     chrome.webNavigation.getAllFrames({ tabId: sender.tab.id }, (frames) => {
@@ -286,3 +294,49 @@ CÂU HỎI: "${questionText}"
 CÁC LỰA CHỌN:\n${list}
 Trả về JSON: {"answer":"chữ cái A/B/C...","answerIndex":số_0_based,"answerText":"nội dung đáp án","explanation":"lý do ngắn","confidence":"high|medium|low"}`;
 }
+
+async function geminiRequestDirect({ prompt, apiKey, model, maxTokens }) {
+  const GEMINI_BASE_V1 = "https://generativelanguage.googleapis.com/v1/models";
+  const GEMINI_BASE_V1BETA = "https://generativelanguage.googleapis.com/v1beta/models";
+  
+  const endpoints = model.startsWith("gemini-2")
+    ? [GEMINI_BASE_V1BETA, GEMINI_BASE_V1]
+    : [GEMINI_BASE_V1, GEMINI_BASE_V1BETA];
+
+  let lastErr = null;
+  for (const base of endpoints) {
+    try {
+      const res = await fetch(`${base}/${model}:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens || 2048 }
+        })
+      });
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        const msg = errBody?.error?.message || `HTTP ${res.status}`;
+        if (msg.includes("not found") || msg.includes("not supported") || res.status === 404 || msg.includes("no longer available")) {
+          lastErr = new Error(msg);
+          continue;
+        }
+        throw new Error(msg);
+      }
+
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) throw new Error("Không có phản hồi từ AI");
+      return text;
+    } catch (err) {
+      if (err.message.includes("not found") || err.message.includes("not supported") || err.message.includes("no longer available")) {
+        lastErr = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr || new Error("Không thể kết nối đến Gemini API");
+}
+

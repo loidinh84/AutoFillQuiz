@@ -747,40 +747,20 @@ ${qLines}`;
     return `Bạn là trợ lý học tập. Chọn đáp án đúng nhất.\nCÂU HỎI: "${questionText}"\nCÁC LỰA CHỌN:\n${list}\nTrả về JSON: {"answer":"chữ cái A/B/C...","answerIndex":số_0_based,"answerText":"nội dung đáp án","explanation":"lý do ngắn","confidence":"high|medium|low"}`;
   }
 
-  // Core API call — tries v1 then v1beta (or vice versa for gemini-2.x)
+  // Core API call — routes via background.js to bypass content script CORS/CSP restrictions
   async function geminiRequest(prompt, apiKey, model, maxTokens = 2048) {
-    const endpoints = model.startsWith("gemini-2") ? [GEMINI_V1BETA, GEMINI_V1] : [GEMINI_V1, GEMINI_V1BETA];
-    let lastErr = null;
-    for (const base of endpoints) {
-      try {
-        const res = await fetch(`${base}/${model}:generateContent?key=${apiKey}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens }
-          })
-        });
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({}));
-          const msg = errBody?.error?.message || `HTTP ${res.status}`;
-          if (msg.includes("not found") || msg.includes("not supported") || res.status === 404 || msg.includes("no longer available")) {
-            lastErr = new Error(msg); continue;
-          }
-          throw new Error(msg);
-        }
-        const data = await res.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!text) throw new Error("Không có phản hồi từ AI");
-        return text;
-      } catch (err) {
-        if (err.message.includes("not found") || err.message.includes("not supported") || err.message.includes("no longer available")) {
-          lastErr = err; continue;
-        }
-        throw err;
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "GEMINI_REQUEST",
+        payload: { prompt, apiKey, model, maxTokens }
+      });
+      if (response && response.success) {
+        return response.text;
       }
+      throw new Error(response?.error || "Lỗi API");
+    } catch (err) {
+      throw err;
     }
-    throw lastErr || new Error("Không thể kết nối Gemini API");
   }
 
   // Parse batch JSON response — extract array from text (handles markdown fences)
@@ -816,6 +796,7 @@ ${qLines}`;
     let currentModelIdx = 0;
     let currentKeyIdx = 0;
     let retries = 1; // 1 retry per key/model pair
+    let lastErrMessage = "Không thể kết nối đến Gemini API";
 
     while (currentModelIdx < modelsToTry.length) {
       const activeModel = modelsToTry[currentModelIdx];
@@ -831,6 +812,7 @@ ${qLines}`;
         // Batch parse failed — fallback to individual
         return await processIndividual(batch, activeKey, activeModel, batchIndex, totalBatches);
       } catch (err) {
+        lastErrMessage = err.message;
         const isQuota = err.message.includes("quota") || err.message.includes("Quota") ||
                         err.message.includes("RESOURCE_EXHAUSTED") || err.message.includes("429") ||
                         err.message.includes("limit");
@@ -870,9 +852,10 @@ ${qLines}`;
         }
       }
     }
-    // If all models and all keys failed
-    return batch.map(q => ({ ...q, answer: null, error: "Hết quota trên toàn bộ API Key và model dự phòng. Hãy thêm key mới hoặc thử lại sau." }));
+    // If all models and all keys failed, return the actual last failure message
+    return batch.map(q => ({ ...q, answer: null, error: `Lỗi: ${lastErrMessage}` }));
   }
+
 
   // Individual fallback — called when batch parse fails for a sub-group
   async function processIndividual(questions, apiKey, model, batchIdx, totalBatches) {
