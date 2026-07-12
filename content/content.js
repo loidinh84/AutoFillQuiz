@@ -761,18 +761,32 @@ RESPOND WITH JSON ARRAY ONLY:`;
 
   // Core API call — routes via background.js to bypass content script CORS/CSP restrictions
   async function geminiRequest(prompt, apiKey, model, maxTokens = 2048) {
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: "GEMINI_REQUEST",
-        payload: { prompt, apiKey, model, maxTokens }
-      });
-      if (response && response.success) {
-        return response.text;
+    // Retry once on Chrome internal errors (service worker wakeup race)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: "GEMINI_REQUEST",
+          payload: { prompt, apiKey, model, maxTokens }
+        });
+        if (response && response.success) {
+          return response.text;
+        }
+        const errMsg = response?.error || "Lỗi API";
+        // If chrome internal error, retry after brief pause
+        if (errMsg.includes("Internal error") && attempt === 0) {
+          await new Promise(r => setTimeout(r, 1500));
+          continue;
+        }
+        throw new Error(errMsg);
+      } catch (err) {
+        if (err.message && err.message.includes("Internal error") && attempt === 0) {
+          await new Promise(r => setTimeout(r, 1500));
+          continue;
+        }
+        throw err;
       }
-      throw new Error(response?.error || "Lỗi API");
-    } catch (err) {
-      throw err;
     }
+    throw new Error("Lỗi kết nối đến background service");
   }
 
   // Parse batch JSON response — extract array from text (handles markdown fences)
@@ -821,10 +835,23 @@ RESPOND WITH JSON ARRAY ONLY:`;
       setStatus("loading", `Đang phân tích${batchLabel}...`, `${batch.length} câu · Model: ${activeModel} · Key: ${obscuredKey}`);
       try {
         const prompt = buildBatchPrompt(batch);
-        const text = await geminiRequest(prompt, activeKey, activeModel, Math.min(2048, batch.length * 80));
+        // Allocate enough tokens: at least 300 per question, minimum 2048
+        const tokenBudget = Math.max(2048, batch.length * 300);
+        const text = await geminiRequest(prompt, activeKey, activeModel, tokenBudget);
         const parsed = parseBatchResponse(text, batch);
         if (parsed) return parsed;
-        // Batch parse failed — fallback to individual
+        // Batch parse failed — if batch is large enough, split in half and retry
+        if (batch.length > 2) {
+          const mid = Math.ceil(batch.length / 2);
+          const half1 = batch.slice(0, mid);
+          const half2 = batch.slice(mid);
+          const [r1, r2] = await Promise.all([
+            processBatch(half1, apiKeys, activeModel, batchIndex, totalBatches),
+            processBatch(half2, apiKeys, activeModel, batchIndex, totalBatches)
+          ]);
+          return [...r1, ...r2];
+        }
+        // Too small to split — last resort: individual
         return await processIndividual(batch, activeKey, activeModel, batchIndex, totalBatches);
       } catch (err) {
         lastErrMessage = err.message;
