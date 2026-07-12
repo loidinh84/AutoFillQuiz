@@ -733,31 +733,30 @@
   function buildBatchPrompt(questions) {
     const qLines = questions.map((q, i) => {
       if (q.type === "fill_blank") {
-        return `[${i}] ĐIỀN CHỖ TRỐNG: "${q.questionText}"`;
+        return `[${i}] FILL: "${q.questionText}"`;
       }
-      const opts = (q.options || []).map((o, j) => `${String.fromCharCode(65 + j)}. ${o.text}`).join(" | ");
-      return `[${i}] TRẮC NGHIỆM: "${q.questionText}" | LỰA CHỌN: ${opts}`;
+      const opts = (q.options || []).map((o, j) => `${String.fromCharCode(65 + j)}:${o.text}`).join("||");
+      return `[${i}] MCQ: "${q.questionText}" OPTIONS:${opts}`;
     }).join("\n");
 
-    return `Bạn là trợ lý học tập thông minh. Trả lời tất cả câu hỏi dưới đây.
-Trả về một JSON array (không có markdown, không giải thích thêm), mỗi phần tử ứng với câu hỏi theo index:
-[
-  {"index":0,"answer":"A","answerIndex":0,"answerText":"nội dung đáp án","explanation":"lý do ngắn","confidence":"high"},
-  ...
-]
-Với câu điền chỗ trống: {"index":0,"answer":"từ cần điền","answerText":"từ cần điền","explanation":"lý do ngắn","confidence":"high"}
+    return `OUTPUT ONLY A JSON ARRAY. NO explanations. NO markdown. NO extra text.
+Each element must match its [index].
+For MCQ: {"index":N,"answer":"A","answerIndex":0,"answerText":"option text","explanation":"<20 words","confidence":"high|medium|low"}
+For FILL: {"index":N,"answer":"word","answerText":"word","explanation":"<20 words","confidence":"high|medium|low"}
 
-CÁC CÂU HỎI:
-${qLines}`;
+QUESTIONS:
+${qLines}
+
+RESPOND WITH JSON ARRAY ONLY:`;
   }
 
   // Single-question prompt (fallback)
   function buildSinglePrompt({ type, questionText, options }) {
     if (type === "fill_blank") {
-      return `Bạn là trợ lý học tập. Điền vào chỗ trống phù hợp nhất.\nCÂU HỎI: "${questionText}"\nTrả về JSON: {"answer":"từ cần điền","explanation":"lý do ngắn","confidence":"high|medium|low"}`;
+      return `Fill in the blank. OUTPUT ONLY JSON, no explanation text outside JSON.\nQuestion: "${questionText}"\nRespond: {"answer":"word to fill","explanation":"reason in <15 words","confidence":"high|medium|low"}`;
     }
-    const list = (options || []).map((o, i) => `${String.fromCharCode(65 + i)}. ${o.text}`).join("\n");
-    return `Bạn là trợ lý học tập. Chọn đáp án đúng nhất.\nCÂU HỎI: "${questionText}"\nCÁC LỰA CHỌN:\n${list}\nTrả về JSON: {"answer":"chữ cái A/B/C...","answerIndex":số_0_based,"answerText":"nội dung đáp án","explanation":"lý do ngắn","confidence":"high|medium|low"}`;
+    const list = (options || []).map((o, i) => `${String.fromCharCode(65 + i)}: ${o.text}`).join(" | ");
+    return `Choose the correct answer. OUTPUT ONLY JSON, no explanation text outside JSON.\nQuestion: "${questionText}"\nOptions: ${list}\nRespond: {"answer":"A|B|C|D","answerIndex":0,"answerText":"exact option text","explanation":"reason in <15 words","confidence":"high|medium|low"}`;
   }
 
   // Core API call — routes via background.js to bypass content script CORS/CSP restrictions
@@ -882,11 +881,18 @@ ${qLines}`;
       const q = questions[i];
       try {
         const prompt = buildSinglePrompt(q);
-        const text = await geminiRequest(prompt, apiKey, model, 256);
+        const text = await geminiRequest(prompt, apiKey, model, 512);
         const clean = text.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
         const s = clean.indexOf("{"), e = clean.lastIndexOf("}");
-        const parsed = s !== -1 ? JSON.parse(clean.slice(s, e + 1)) : null;
-        results.push({ ...q, answer: parsed || { answer: clean.trim(), explanation: "", confidence: "medium" } });
+        let parsed = null;
+        if (s !== -1 && e !== -1) {
+          try { parsed = JSON.parse(clean.slice(s, e + 1)); } catch {}
+        }
+        if (parsed && (parsed.answer || parsed.answerText)) {
+          results.push({ ...q, answer: parsed });
+        } else {
+          results.push({ ...q, answer: null, error: "AI không trả về đáp án hợp lệ" });
+        }
       } catch (err) {
         results.push({ ...q, answer: null, error: err.message });
       }
@@ -1812,9 +1818,11 @@ ${qLines}`;
           ansHtml = `<span class="aqz-answer-chip">${esc(rawAns)}. ${esc(trunc(rawText, 28))}</span>${confChip(r.answer?.confidence)}`;
         }
       }
+      // Cap explanation at 100 chars to prevent walls of text
+      const expText = r.answer?.explanation ? trunc(r.answer.explanation, 100) : "";
       const expHtml =
-        showExp && r.answer?.explanation
-          ? `<div class="aqz-result-exp">💬 ${esc(r.answer.explanation)}</div>`
+        showExp && expText
+          ? `<div class="aqz-result-exp">💬 ${esc(expText)}</div>`
           : "";
       card.innerHTML = `<div class="aqz-result-q">📝 <strong>${i + 1}.</strong> ${qText}</div><div class="aqz-result-ans">${ansHtml}</div>${expHtml}`;
       list.appendChild(card);
